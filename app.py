@@ -501,9 +501,13 @@ elif st.session_state.stage == "results":
                 use_container_width=True,
             )
     with dl3:
-        if st.button("📊 Open MLflow tracker", use_container_width=True):
-            subprocess.Popen(
-                ["mlflow", "ui", "--port", "5001"],
-                cwd="/Users/khushichoudhary/Neo",
-            )
-            st.info("Opening [http://localhost:5001](http://localhost:5001) — check a new tab.")
+        try:
+            import mlflow  # noqa: F401
+            if st.button("📊 Open MLflow tracker", use_container_width=True):
+                subprocess.Popen(
+                    ["mlflow", "ui", "--port", "5001"],
+                    cwd="/Users/khushichoudhary/Neo",
+                )
+                st.info("Opening [http://localhost:5001](http://localhost:5001) — check a new tab.")
+        except ImportError:
+            pass
