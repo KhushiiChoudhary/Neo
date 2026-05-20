@@ -23,7 +23,7 @@ def _check_high_nulls(df: pd.DataFrame, target_col: str, threshold: float = 0.3)
             continue
         null_pct = df[col].isnull().mean()
         if null_pct > threshold:
-            issues.append({"level": "warning", "message": f"`{col}` is {null_pct * 100:.0f}% null — will be imputed, but may add noise."})
+            issues.append({"level": "warning", "message": f"`{col}` is {null_pct * 100:.0f}% null. Will be imputed, but may add noise."})
     return issues
 
 
@@ -38,7 +38,7 @@ def _check_leakage_risk(df: pd.DataFrame, target_col: str, threshold: float = 0.
         try:
             corr = abs(df[col].corr(target))
             if corr > threshold:
-                issues.append({"level": "error", "message": f"`{col}` has {corr:.2f} correlation with target — possible data leakage. Consider removing it."})
+                issues.append({"level": "error", "message": f"`{col}` has {corr:.2f} correlation with target. Possible data leakage. Consider removing it."})
         except Exception:
             continue
     return issues
@@ -51,14 +51,14 @@ def _check_near_constant(df: pd.DataFrame, target_col: str, threshold: float = 0
             continue
         top_freq = df[col].value_counts(normalize=True).iloc[0] if df[col].nunique() > 0 else 0
         if top_freq >= threshold:
-            issues.append({"level": "warning", "message": f"`{col}` is near-constant ({top_freq * 100:.0f}% one value) — likely uninformative."})
+            issues.append({"level": "warning", "message": f"`{col}` is near-constant ({top_freq * 100:.0f}% one value). Likely uninformative."})
     return issues
 
 
 def _check_target_nulls(df: pd.DataFrame, target_col: str) -> list[dict]:
     null_count = df[target_col].isnull().sum()
     if null_count > 0:
-        return [{"level": "error", "message": f"Target column `{target_col}` has {null_count} null values — these rows will be dropped."}]
+        return [{"level": "error", "message": f"Target column `{target_col}` has {null_count} null values. These rows will be dropped."}]
     return []
 
 

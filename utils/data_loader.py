@@ -11,27 +11,27 @@ import pandas as pd
 # ── sample datasets (sklearn, no internet required) ───────────────────────────
 
 SAMPLE_DATASETS: dict[str, dict] = {
-    "Titanic — survival prediction (classification)": {
+    "Titanic: survival prediction (classification)": {
         "url": "https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv",
         "description": "891 passengers · 12 columns · predict Survived",
     },
-    "Iris — flower species (classification)": {
+    "Iris: flower species (classification)": {
         "loader": "iris",
         "description": "150 rows · 4 features · predict species",
     },
-    "Wine — wine quality (classification)": {
+    "Wine: wine quality (classification)": {
         "loader": "wine",
         "description": "178 rows · 13 features · predict wine class",
     },
-    "Breast Cancer — diagnosis (classification)": {
+    "Breast Cancer: diagnosis (classification)": {
         "loader": "breast_cancer",
         "description": "569 rows · 30 features · predict malignant/benign",
     },
-    "Diabetes — disease progression (regression)": {
+    "Diabetes: disease progression (regression)": {
         "loader": "diabetes",
         "description": "442 rows · 10 features · predict disease progression score",
     },
-    "California Housing — home prices (regression)": {
+    "California Housing: home prices (regression)": {
         "loader": "california_housing",
         "description": "20,640 rows · 8 features · predict median house value",
     },

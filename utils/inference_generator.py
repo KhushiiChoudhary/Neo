@@ -68,7 +68,7 @@ import pandas as pd
 
 FEATURE_NAMES = {features_repr}
 
-app = FastAPI(title="AutoML Agent — {model_name}")
+app = FastAPI(title="AutoML Agent: {model_name}")
 model = joblib.load("best_model.pkl")
 
 
@@ -111,7 +111,7 @@ def build_zip(
         zf.writestr("serve.py", _serve_script(model_name, feature_names, problem_type))
         zf.writestr(
             "README.md",
-            f"# AutoML Agent — {model_name}\n\n"
+            f"# AutoML Agent: {model_name}\n\n"
             "## Quick start\n\n"
             "```bash\n"
             "pip install scikit-learn xgboost lightgbm joblib pandas fastapi uvicorn\n\n"

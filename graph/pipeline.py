@@ -61,11 +61,11 @@ def data_node(state: AgentState) -> AgentState:
         if cb:
             cb(
                 f"✅ **Target column confirmed:** `{confirmed_target}` "
-                f"({confirmed_type}) — preprocessing data…"
+                f"({confirmed_type}). Preprocessing data..."
             )
     else:
         if cb:
-            cb("🔍 **Data Agent** — profiling your dataset and identifying the target column…")
+            cb("🔍 **Data Agent**: profiling your dataset and identifying the target column...")
 
     result = data_agent.run(
         df=state["df_raw"],
@@ -121,7 +121,7 @@ def experiment_node(state: AgentState) -> AgentState:
 
     cb = state.get("status_callback")
     if cb:
-        cb("🧪 **Experiment Agent** — running 4 models with Optuna hyperparameter tuning…")
+        cb("🧪 **Experiment Agent**: running 4 models with Optuna hyperparameter tuning...")
 
     result = experiment_agent.run(
         X_train=state["X_train"],
@@ -135,7 +135,7 @@ def experiment_node(state: AgentState) -> AgentState:
 
     if cb:
         metric_str = " · ".join(f"{k}: **{v}**" for k, v in result["best_metrics"].items())
-        cb(f"🏆 **Best model:** {result['best_model_name']} — {metric_str}")
+        cb(f"🏆 **Best model:** {result['best_model_name']} | {metric_str}")
 
     return {**state, **result}
 
@@ -145,7 +145,7 @@ def reporter_node(state: AgentState) -> AgentState:
 
     cb = state.get("status_callback")
     if cb:
-        cb("📝 **Reporter Agent** — building SHAP plot and writing summary…")
+        cb("📝 **Reporter Agent**: building SHAP plot and writing summary...")
 
     result = reporter_agent.run(
         user_goal=state["user_goal"],

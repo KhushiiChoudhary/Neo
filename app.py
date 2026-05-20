@@ -24,14 +24,13 @@ st.markdown(
 
     /* ── header ── */
     .main-header {
-        font-size: 2rem;
+        font-size: 1.6rem;
         font-weight: 700;
-        background: linear-gradient(90deg, #92400e, #b45309);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        line-height: 1.5;
+        color: #92400e;
         margin-bottom: 0.1rem;
     }
-    .sub-header { color: #78716c; font-size: 0.9rem; }
+    .sub-header { color: #78716c; font-size: 0.85rem; }
 
     /* ── progress stepper ── */
     .stepper { display: flex; align-items: flex-start; margin: 1.2rem 0 1.6rem 0; }
@@ -171,7 +170,7 @@ def render_stepper(current: str) -> None:
 
 # ── sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown('<div class="main-header">AutoML Agent</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">Neo</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Your autonomous ML engineer</div>', unsafe_allow_html=True)
     st.divider()
 
@@ -204,14 +203,14 @@ with st.sidebar:
         state = st.session_state.agent_state
         st.divider()
         st.markdown('<div class="sidebar-title">Best model</div>', unsafe_allow_html=True)
-        st.markdown(f"**{state.get('best_model_name', '—')}**")
+        st.markdown(f"**{state.get('best_model_name', 'N/A')}**")
         for k, v in (state.get("best_metrics") or {}).items():
             st.markdown(f"`{k}`: **{v}**")
 
 
 # ── main header ───────────────────────────────────────────────────────────────
-st.markdown('<div class="main-header">AutoML Agent</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Upload a CSV · describe your goal · get a tuned model</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">Neo: AutoML Agent</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Upload data · describe your goal · get a tuned model</div>', unsafe_allow_html=True)
 
 render_stepper(st.session_state.stage)
 st.divider()
@@ -234,7 +233,7 @@ if st.session_state.stage == "upload":
 
     # ── tab: sample datasets ─────────────────────────────────────────────────
     with tab_sample:
-        st.markdown("Pick a built-in dataset to try the agent instantly — no file needed.")
+        st.markdown("Pick a built-in dataset to try the agent instantly. No file needed.")
         choice = st.selectbox(
             "Dataset",
             options=list(SAMPLE_DATASETS.keys()),
@@ -245,7 +244,7 @@ if st.session_state.stage == "upload":
             with st.spinner("Loading…"):
                 try:
                     df = load_sample(choice)
-                    source_name = choice.split("—")[0].strip()
+                    source_name = choice.split(":")[0].strip()
                 except Exception as e:
                     st.error(f"Failed to load: {e}")
 
@@ -304,7 +303,7 @@ if st.session_state.stage == "upload":
     # ── preview + goal (shared across all tabs) ───────────────────────────────
     if df is not None:
         st.divider()
-        st.success(f"**{source_name}** loaded — {df.shape[0]:,} rows × {df.shape[1]} columns")
+        st.success(f"**{source_name}** loaded: {df.shape[0]:,} rows x {df.shape[1]} columns")
 
         stat_cards([
             ("Rows", f"{df.shape[0]:,}"),
@@ -353,7 +352,7 @@ elif st.session_state.stage == "confirm":
 
     with st.chat_message("assistant"):
         st.markdown(
-            f"I analyzed your dataset. Here's what I found — **please confirm or adjust** "
+            f"I analyzed your dataset. Here's what I found. **Please confirm or adjust** "
             f"before I start training:\n\n"
             f"> _{st.session_state.suggested_reasoning}_"
         )
@@ -443,7 +442,7 @@ elif st.session_state.stage == "results":
 
     state = st.session_state.agent_state
     if state is None:
-        st.error("Something went wrong — no results returned.")
+        st.error("Something went wrong. No results returned.")
         st.stop()
 
     # ── engineered features ──────────────────────────────────────────────────
@@ -451,7 +450,7 @@ elif st.session_state.stage == "results":
     if engineered:
         with st.expander(f"✨ {len(engineered)} new features engineered", expanded=False):
             for f in engineered:
-                st.markdown(f"**`{f['name']}`** — {f['rationale']}")
+                st.markdown(f"**`{f['name']}`**: {f['rationale']}")
                 st.code(f["expression"], language="python")
 
     # ── report ───────────────────────────────────────────────────────────────
@@ -508,6 +507,6 @@ elif st.session_state.stage == "results":
                     ["mlflow", "ui", "--port", "5001"],
                     cwd="/Users/khushichoudhary/Neo",
                 )
-                st.info("Opening [http://localhost:5001](http://localhost:5001) — check a new tab.")
+                st.info("Opening [http://localhost:5001](http://localhost:5001) in a new tab.")
         except ImportError:
             pass

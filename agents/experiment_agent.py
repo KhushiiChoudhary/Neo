@@ -243,7 +243,7 @@ def run(
     else:
         model_names = ["Ridge", "RandomForest", "XGBoost", "LightGBM"]
 
-    # always run baseline first — tuned models must beat it
+    # always run baseline first; tuned models must beat it
     baseline = _run_baseline(problem_type, X_train, y_train, X_test, y_test)
     results = [baseline]
     best_result = None  # baseline is never eligible for "best model"
@@ -260,7 +260,7 @@ def run(
 
         if status_callback:
             metric_str = " · ".join(f"{k}: {v}" for k, v in result["metrics"].items())
-            status_callback(f"✅ **{name}** done — {metric_str}")
+            status_callback(f"✅ **{name}** done: {metric_str}")
 
     # build comparison dataframe
     rows = []

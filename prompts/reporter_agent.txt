@@ -12,7 +12,7 @@ Write a concise report with exactly these four sections. Use markdown formatting
 One sentence about what the model does and what dataset it was trained on.
 
 ## Best Model: [Model Name]
-State the model name and its key metric (AUC, F1, or RMSE/R²). Explain in plain English what this number means — e.g. "correctly predicts 91 out of 100 customers".
+State the model name and its key metric (AUC, F1, or RMSE/R²). Explain in plain English what this number means, e.g. "correctly predicts 91 out of 100 customers".
 
 ## Key Drivers
 List the top 3-5 features and explain in plain English what each one means for the prediction. Be specific, not generic.

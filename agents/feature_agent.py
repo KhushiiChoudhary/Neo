@@ -24,7 +24,7 @@ def suggest_features(profile: dict, target_col: str, user_goal: str) -> list[dic
 def apply_features(df: pd.DataFrame, features: list[dict]) -> tuple[pd.DataFrame, list[dict]]:
     """
     Safely execute each feature expression and add the column to df.
-    Returns (enriched_df, applied_features) — only features that succeeded.
+    Returns (enriched_df, applied_features). Only features that succeeded are included.
     """
     df = df.copy()
     applied = []
@@ -61,7 +61,7 @@ def run(
     status_callback=None,
 ) -> dict:
     if status_callback:
-        status_callback("🛠️ **Feature Engineering Agent** — asking GPT-4o to suggest new features…")
+        status_callback("🛠️ **Feature Engineering Agent**: asking GPT-4o to suggest new features...")
 
     features = suggest_features(profile, target_col, user_goal)
     df_enriched, applied = apply_features(df, features)
