@@ -1,6 +1,6 @@
 # Neo: Autonomous AutoML Agent
 
-An autonomous ML engineer in your browser. Upload data, describe your goal in plain English, and Neo handles everything end-to-end: understanding the data, engineering features, running experiments, tuning models, and returning the best result with a full explanation.
+An autonomous ML engineer in your browser. Upload data, describe your goal in plain English, and Neo handles everything end-to-end: profiling the data, detecting quality issues and leakage, engineering new features, tuning four models with cross-validation, explaining what drove the result, and handing you a ready-to-deploy inference package.
 
 ---
 
@@ -14,47 +14,66 @@ Neo: Analyzed your dataset. Target column: churn_flag (classification).
      Engineering 4 new features: tenure_per_product, spend_velocity...
 
      Tuning 4 models (25 Optuna trials each):
-       LogisticRegression   AUC: 0.81
-       RandomForest         AUC: 0.91  <- best
-       XGBoost              AUC: 0.89
-       LightGBM             AUC: 0.88
+       LogisticRegression   AUC: 0.81  cv: 0.80 +/-0.02
+       RandomForest         AUC: 0.91  cv: 0.90 +/-0.01  <- best
+       XGBoost              AUC: 0.89  cv: 0.88 +/-0.02
+       LightGBM             AUC: 0.88  cv: 0.87 +/-0.02
 
      Best model: RandomForest (AUC 0.91)
      Top drivers: tenure, total_spend, login_frequency
 
-     Here's your model, inference package, and report.
+     Here is your model, inference package, and report.
 ```
 
 ---
 
 ## Features
 
-- **5 data input methods**: upload CSV, paste URL, paste raw text, sample datasets, or database connection (SQLite / PostgreSQL)
-- **Human-in-the-loop confirmation**: review and override the target column and problem type before any training starts
-- **Data quality checks**: flags class imbalance, data leakage risk, high null columns, and near-constant features before training
-- **Feature Engineering Agent**: GPT-4o suggests and creates new features from your existing columns
-- **4 tuned models**: Logistic Regression / Ridge, Random Forest, XGBoost, LightGBM; each with 25 Optuna trials
-- **Baseline benchmark**: always trains a naive baseline first so results are meaningful
-- **SHAP explainability**: feature importance bar chart for every run
-- **Confidence plot**: probability distribution (classification) or actual vs predicted scatter (regression)
-- **Plain English report**: GPT-4o writes a business-readable summary of what won and why
-- **MLflow experiment tracking**: every trial logged; one-click to open the full dashboard
-- **Inference package download**: zip containing `best_model.pkl` + `predict.py` + `serve.py` (FastAPI) + `README`
+**Data input**
+- 5 input methods: upload CSV, paste a URL, paste raw text, built-in sample datasets, or a live database connection (SQLite / PostgreSQL)
+
+**Pre-training analysis**
+- Data quality checks: class imbalance, high null columns, near-constant features
+- Leakage detection using both Pearson correlation and mutual information (catches numeric and categorical leakage)
+- Class distribution chart and imbalance warning on the confirmation screen
+- Human-in-the-loop confirmation: review and override the target column and problem type before any training starts
+
+**Training pipeline**
+- Feature Engineering Agent: GPT-5.4 suggests and creates new features from existing columns
+- 4 tuned models: Logistic Regression / Ridge, Random Forest, XGBoost, LightGBM
+- Each model gets 25 Optuna Bayesian trials + 5-fold cross-validation
+- Naive baseline always trained first so improvements are meaningful
+- Live progress: every agent step streams into the UI as it happens
+
+**Results and explainability**
+- Color-coded model leaderboard with CV mean and std
+- SHAP feature importance chart
+- Confusion matrix and ROC curve (classification)
+- Residual analysis: residuals vs predicted + residual histogram (regression)
+- Confidence distribution / actual-vs-predicted plot
+- Plain English report written by the LLM
+- Prediction sandbox: enter your own inputs and get a live prediction with confidence
+
+**Downloads**
+- Trained model (`.pkl`)
+- Styled HTML report
+- Inference package (`.zip`): `best_model.pkl` + `predict.py` + `serve.py` (FastAPI) + `README`
+- MLflow experiment tracker (one-click launch)
 
 ---
 
 ## Architecture
 
 ```
-Streamlit UI
+Streamlit UI  (4-stage flow: Upload -> Confirm -> Training -> Results)
      |
      v
 LangGraph StateGraph
      |
-     |-- Data Agent         profile -> GPT-4o target ID -> preprocessing
-     |-- Feature Agent      GPT-4o feature suggestions -> pandas execution
-     |-- Experiment Agent   Optuna x 4 models -> MLflow logging
-     +-- Reporter Agent     SHAP -> confidence plot -> GPT-4o report -> inference zip
+     |-- Data Agent         profile -> GPT-5.4 target ID -> preprocessing
+     |-- Feature Agent      GPT-5.4 feature suggestions -> pandas execution
+     |-- Experiment Agent   Optuna x 4 models + 5-fold CV -> MLflow logging
+     +-- Reporter Agent     SHAP -> confusion matrix -> ROC -> residuals -> report -> zip
 ```
 
 ---
@@ -65,9 +84,10 @@ LangGraph StateGraph
 |---|---|
 | UI | Streamlit |
 | Orchestration | LangGraph |
-| LLM | OpenAI GPT-4o |
+| LLM | OpenAI GPT-5.4 |
 | ML | scikit-learn, XGBoost, LightGBM |
 | Tuning | Optuna (Bayesian, 25 trials/model) |
+| Validation | 5-fold cross-validation |
 | Experiment tracking | MLflow |
 | Explainability | SHAP |
 | Deployment target | Streamlit Community Cloud |
@@ -92,7 +112,7 @@ pip install -r requirements.txt
 **3. Add your OpenAI API key**
 ```bash
 cp .env.example .env
-# then edit .env and add your key:
+# edit .env and add your key:
 # OPENAI_API_KEY=sk-...
 ```
 
@@ -109,10 +129,11 @@ Open [http://localhost:8501](http://localhost:8501) in your browser.
 
 1. **Pick a data source**: upload a CSV, paste a URL, use a built-in sample dataset, or connect a database
 2. **Describe your goal** in plain English (e.g. "Predict survival", "Forecast house prices")
-3. **Confirm the target column**: review what GPT-4o identified and override if needed
-4. **Watch the agents work**: live status updates stream into the chat as each agent runs
-5. **Review results**: SHAP plot, confidence chart, model comparison table, plain English report
-6. **Download**: grab the model (`.pkl`) or the full inference package (`.zip` with FastAPI server)
+3. **Review the confirmation screen**: check the target column, class distribution, and any data quality warnings
+4. **Watch the agents work**: every step streams live into the status panel
+5. **Explore results**: SHAP plot, confusion matrix, ROC curve, model leaderboard with CV scores, plain English report
+6. **Try the prediction sandbox**: enter custom feature values and get a live prediction with confidence
+7. **Download**: model `.pkl`, styled HTML report, or the full inference package `.zip`
 
 ---
 
@@ -120,24 +141,24 @@ Open [http://localhost:8501](http://localhost:8501) in your browser.
 
 ```
 Neo/
-|-- app.py                    # Streamlit UI, 4-stage chat flow
+|-- app.py                    # Streamlit UI, 4-stage flow
 |-- requirements.txt
 |-- .env                      # OPENAI_API_KEY (not committed)
 |-- .streamlit/
 |   +-- config.toml           # Theme (light, brown accent)
 |-- agents/
-|   |-- data_agent.py         # Profile + GPT-4o target ID + preprocessing
-|   |-- feature_agent.py      # GPT-4o feature engineering
-|   |-- experiment_agent.py   # Optuna tuning for 4 models + baseline
-|   +-- reporter_agent.py     # SHAP + confidence plot + GPT-4o report
+|   |-- data_agent.py         # Profile + GPT-5.4 target ID + preprocessing
+|   |-- feature_agent.py      # GPT-5.4 feature engineering
+|   |-- experiment_agent.py   # Optuna tuning + 5-fold CV + MLflow logging
+|   +-- reporter_agent.py     # SHAP + confusion matrix + ROC + residuals + report
 |-- graph/
 |   +-- pipeline.py           # LangGraph: Data -> Features -> Experiment -> Reporter
 |-- utils/
 |   |-- llm.py                # OpenAI wrapper (chat + chat_json)
 |   |-- mlflow_tracker.py     # MLflow run logger
 |   |-- data_loader.py        # 5 data input methods
-|   |-- data_quality.py       # Pre-training data quality checks
-|   +-- inference_generator.py# Generates predict.py + serve.py
+|   |-- data_quality.py       # Leakage detection + pre-training quality checks
+|   +-- inference_generator.py# Generates predict.py + serve.py (FastAPI)
 +-- prompts/
     |-- data_agent.txt
     |-- feature_agent.txt
@@ -151,7 +172,10 @@ Neo/
 
 1. Push this repo to GitHub
 2. Go to [share.streamlit.io](https://share.streamlit.io) and connect the repo
-3. Set `OPENAI_API_KEY` as a secret in the app settings
+3. In app settings, add `OPENAI_API_KEY` under **Secrets**:
+   ```toml
+   OPENAI_API_KEY = "sk-..."
+   ```
 4. Deploy and get a public URL instantly
 
 ---
@@ -164,4 +188,4 @@ Every model run is automatically logged. To browse all experiments:
 mlflow ui --port 5001
 ```
 
-Then open [http://localhost:5001](http://localhost:5001). Or click the **"Open MLflow tracker"** button inside the app.
+Then open [http://localhost:5001](http://localhost:5001), or click **Open MLflow tracker** inside the app.
