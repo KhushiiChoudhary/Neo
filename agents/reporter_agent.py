@@ -11,6 +11,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import shap
 
+from sklearn.metrics import (
+    confusion_matrix, ConfusionMatrixDisplay,
+    roc_curve, auc as sklearn_auc,
+)
 from utils.llm import chat
 from utils.inference_generator import build_zip
 
@@ -137,6 +141,89 @@ def generate_confidence_plot(model, X_test: np.ndarray, y_test: np.ndarray, prob
     return None
 
 
+# ── confusion matrix ─────────────────────────────────────────────────────────
+
+def generate_confusion_matrix_plot(model, X_test: np.ndarray, y_test: np.ndarray):
+    """Returns a matplotlib figure with the normalised confusion matrix, or None."""
+    try:
+        preds = model.predict(X_test)
+        classes = np.unique(np.concatenate([y_test, preds]))
+        cm = confusion_matrix(y_test, preds, labels=classes, normalize="true")
+        fig, ax = plt.subplots(figsize=(5, 4))
+        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=classes)
+        disp.plot(ax=ax, colorbar=False, cmap="YlOrBr")
+        ax.set_title("Confusion Matrix (row-normalised)")
+        plt.tight_layout()
+        return fig
+    except Exception:
+        return None
+
+
+# ── ROC curve ─────────────────────────────────────────────────────────────────
+
+def generate_roc_curve_plot(model, X_test: np.ndarray, y_test: np.ndarray):
+    """Binary classification ROC curve. Returns figure or None."""
+    try:
+        if not hasattr(model, "predict_proba"):
+            return None
+        proba = model.predict_proba(X_test)
+        classes = np.unique(y_test)
+        fig, ax = plt.subplots(figsize=(5, 4))
+        if len(classes) == 2:
+            fpr, tpr, _ = roc_curve(y_test, proba[:, 1])
+            roc_auc = sklearn_auc(fpr, tpr)
+            ax.plot(fpr, tpr, color=BROWN, lw=2, label=f"AUC = {roc_auc:.3f}")
+        else:
+            from sklearn.preprocessing import label_binarize
+            y_bin = label_binarize(y_test, classes=classes)
+            for i, cls in enumerate(classes):
+                fpr, tpr, _ = roc_curve(y_bin[:, i], proba[:, i])
+                roc_auc = sklearn_auc(fpr, tpr)
+                ax.plot(fpr, tpr, lw=1.5, label=f"Class {cls} (AUC={roc_auc:.2f})")
+        ax.plot([0, 1], [0, 1], "k--", lw=1, label="Random")
+        ax.set_xlabel("False Positive Rate")
+        ax.set_ylabel("True Positive Rate")
+        ax.set_title("ROC Curve")
+        ax.legend(fontsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        plt.tight_layout()
+        return fig
+    except Exception:
+        return None
+
+
+# ── residual analysis ─────────────────────────────────────────────────────────
+
+def generate_residual_plot(model, X_test: np.ndarray, y_test: np.ndarray):
+    """Regression only: predicted vs residuals + residual histogram. Returns figure or None."""
+    try:
+        preds = model.predict(X_test)
+        residuals = y_test - preds
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+
+        ax1.scatter(preds, residuals, alpha=0.4, color=BROWN, s=18)
+        ax1.axhline(0, color="#e11d48", linewidth=1.2, linestyle="--")
+        ax1.set_xlabel("Predicted")
+        ax1.set_ylabel("Residual")
+        ax1.set_title("Residuals vs Predicted")
+        ax1.spines["top"].set_visible(False)
+        ax1.spines["right"].set_visible(False)
+
+        ax2.hist(residuals, bins=30, color=BROWN, alpha=0.8, edgecolor="white")
+        ax2.axvline(0, color="#e11d48", linewidth=1.2, linestyle="--")
+        ax2.set_xlabel("Residual")
+        ax2.set_ylabel("Count")
+        ax2.set_title("Residual Distribution")
+        ax2.spines["top"].set_visible(False)
+        ax2.spines["right"].set_visible(False)
+
+        plt.tight_layout()
+        return fig
+    except Exception:
+        return None
+
+
 # ── report writing ────────────────────────────────────────────────────────────
 
 def write_report(
@@ -190,6 +277,19 @@ def run(
         status_callback("Generating confidence plot.")
     confidence_fig = generate_confidence_plot(best_model, X_test, y_test, problem_type)
 
+    confusion_fig = roc_fig = residual_fig = None
+    if problem_type == "classification":
+        if status_callback:
+            status_callback("Generating confusion matrix.")
+        confusion_fig = generate_confusion_matrix_plot(best_model, X_test, y_test)
+        if status_callback:
+            status_callback("Generating ROC curve.")
+        roc_fig = generate_roc_curve_plot(best_model, X_test, y_test)
+    else:
+        if status_callback:
+            status_callback("Generating residual analysis.")
+        residual_fig = generate_residual_plot(best_model, X_test, y_test)
+
     if status_callback:
         status_callback("Writing report.")
     report_md = write_report(user_goal, best_model_name, best_metrics, results_df, top_features)
@@ -200,6 +300,9 @@ def run(
     return {
         "shap_fig": shap_fig,
         "confidence_fig": confidence_fig,
+        "confusion_fig": confusion_fig,
+        "roc_fig": roc_fig,
+        "residual_fig": residual_fig,
         "top_features": top_features,
         "report_md": report_md,
         "model_bytes": model_bytes,

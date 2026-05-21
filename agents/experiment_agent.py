@@ -11,6 +11,7 @@ from sklearn.metrics import (
     roc_auc_score, f1_score, accuracy_score,
     mean_squared_error, r2_score, mean_absolute_error,
 )
+from sklearn.model_selection import cross_val_score
 from xgboost import XGBClassifier, XGBRegressor
 from lightgbm import LGBMClassifier, LGBMRegressor
 
@@ -153,6 +154,8 @@ def tune_model(
         else:
             best_model = LGBMRegressor(**kw, random_state=42, n_jobs=-1, verbose=-1)
 
+    X_all = np.concatenate([X_train, X_test], axis=0)
+    y_all = np.concatenate([y_train, y_test], axis=0)
     best_model.fit(X_train, y_train)
     preds = best_model.predict(X_test)
 
@@ -169,6 +172,7 @@ def tune_model(
             pass
         metrics["f1"] = round(f1_score(y_test, preds, average="weighted"), 4)
         primary_metric = metrics.get("auc", metrics["f1"])
+        cv_scoring = "roc_auc" if len(classes) == 2 else "f1_weighted"
     else:
         rmse = round(np.sqrt(mean_squared_error(y_test, preds)), 4)
         metrics = {
@@ -176,7 +180,16 @@ def tune_model(
             "mae": round(mean_absolute_error(y_test, preds), 4),
             "r2": round(r2_score(y_test, preds), 4),
         }
-        primary_metric = -rmse  # lower is better
+        primary_metric = -rmse
+        cv_scoring = "r2"
+
+    # 5-fold cross-validation on the full dataset with best params
+    try:
+        cv_raw = cross_val_score(best_model, X_all, y_all, cv=5, scoring=cv_scoring, n_jobs=-1)
+        cv_mean = round(float(cv_raw.mean()), 4)
+        cv_std  = round(float(cv_raw.std()), 4)
+    except Exception:
+        cv_mean, cv_std = None, None
 
     log_run(
         experiment_name=EXPERIMENT_NAME,
@@ -191,6 +204,9 @@ def tune_model(
         "model": best_model,
         "params": best_params,
         "metrics": metrics,
+        "cv_mean": cv_mean,
+        "cv_std": cv_std,
+        "cv_scoring": cv_scoring,
         "primary_metric": primary_metric,
     }
 
@@ -260,13 +276,17 @@ def run(
 
         if status_callback:
             metric_str = " · ".join(f"{k}: {v}" for k, v in result["metrics"].items())
-            status_callback(f"**{name}** — {metric_str}")
+            cv_str = f" · cv: {result['cv_mean']} ±{result['cv_std']}" if result.get("cv_mean") is not None else ""
+            status_callback(f"**{name}** — {metric_str}{cv_str}")
 
     # build comparison dataframe
     rows = []
     for r in results:
         row = {"Model": r["model_name"]}
         row.update(r["metrics"])
+        if r.get("cv_mean") is not None:
+            row["cv_mean"] = r["cv_mean"]
+            row["cv_std"]  = r["cv_std"]
         rows.append(row)
     results_df = pd.DataFrame(rows)
 

@@ -42,8 +42,12 @@ class AgentState(TypedDict, total=False):
     # reporter agent outputs
     shap_fig: Any
     confidence_fig: Any
+    confusion_fig: Any
+    roc_fig: Any
+    residual_fig: Any
     top_features: list
     report_md: str
+    cv_scores: dict
     model_bytes: bytes
     inference_zip: bytes
 

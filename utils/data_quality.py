@@ -28,19 +28,52 @@ def _check_high_nulls(df: pd.DataFrame, target_col: str, threshold: float = 0.3)
 
 
 def _check_leakage_risk(df: pd.DataFrame, target_col: str, threshold: float = 0.9) -> list[dict]:
+    from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
+    from sklearn.preprocessing import LabelEncoder
+
     issues = []
-    target = df[target_col]
-    if not pd.api.types.is_numeric_dtype(target):
-        return []
-    for col in df.select_dtypes(include=[np.number]).columns:
+    target = df[target_col].dropna()
+    df_clean = df.loc[target.index].copy()
+
+    is_numeric_target = pd.api.types.is_numeric_dtype(target)
+
+    # encode target if categorical
+    if not is_numeric_target:
+        le = LabelEncoder()
+        target_enc = le.fit_transform(target.astype(str))
+    else:
+        target_enc = target.values
+
+    # pearson correlation for numeric features
+    for col in df_clean.select_dtypes(include=[np.number]).columns:
         if col == target_col:
             continue
         try:
-            corr = abs(df[col].corr(target))
+            corr = abs(df_clean[col].fillna(0).corr(pd.Series(target_enc, index=df_clean.index)))
             if corr > threshold:
-                issues.append({"level": "error", "message": f"`{col}` has {corr:.2f} correlation with target. Possible data leakage. Consider removing it."})
+                issues.append({"level": "error", "message": f"`{col}` has {corr:.2f} Pearson correlation with the target — likely data leakage. Consider removing it."})
         except Exception:
             continue
+
+    # mutual information for all features (catches categorical leakage)
+    try:
+        feature_cols = [c for c in df_clean.columns if c != target_col]
+        X_mi = df_clean[feature_cols].copy()
+        for c in X_mi.columns:
+            if not pd.api.types.is_numeric_dtype(X_mi[c]):
+                X_mi[c] = LabelEncoder().fit_transform(X_mi[c].astype(str))
+        X_mi = X_mi.fillna(0).values
+
+        mi_fn = mutual_info_classif if not is_numeric_target or len(np.unique(target_enc)) <= 20 else mutual_info_regression
+        mi_scores = mi_fn(X_mi, target_enc, random_state=42)
+        mi_max = mi_scores.max() if mi_scores.max() > 0 else 1.0
+        for col, score in zip(feature_cols, mi_scores):
+            normalised = score / mi_max
+            if normalised > 0.95 and col not in [i["message"].split("`")[1] for i in issues]:
+                issues.append({"level": "error", "message": f"`{col}` has very high mutual information with the target (normalised score {normalised:.2f}) — possible leakage."})
+    except Exception:
+        pass
+
     return issues
 
 

@@ -3,12 +3,17 @@ from __future__ import annotations
 import subprocess
 import pandas as pd
 import streamlit as st
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from dotenv import load_dotenv
+
+PLOT_BROWN = "#92400e"
 
 load_dotenv()
 
 st.set_page_config(
-    page_title="Neo — AutoML Agent",
+    page_title="Neo: AutoML Agent",
     page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded",
@@ -92,6 +97,39 @@ st.markdown(
         color: #78716c;
         margin: 2px;
     }
+
+    /* ── hero row (upload screen) ── */
+    .hero-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: #faf7f5;
+        border: 1px solid #e7e0da;
+        border-radius: 12px;
+        padding: 1rem 1.5rem;
+        margin-bottom: 1rem;
+    }
+    .hero-item { display: flex; align-items: center; gap: 0.5rem; flex: 1; }
+    .hero-num {
+        width: 26px; height: 26px; border-radius: 50%;
+        background: #92400e; color: #fff;
+        font-size: 0.75rem; font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+    }
+    .hero-label { font-size: 0.82rem; color: #1c1917; font-weight: 500; }
+    .hero-sep { color: #d4a574; font-size: 1rem; font-weight: 300; }
+
+    /* ── best model callout ── */
+    .callout-box {
+        background: linear-gradient(135deg, #fdf6ee, #faf7f5);
+        border-left: 4px solid #92400e;
+        border-radius: 0 10px 10px 0;
+        padding: 1rem 1.4rem;
+        margin: 1rem 0;
+    }
+    .callout-title { font-size: 1rem; font-weight: 700; color: #92400e; margin-bottom: 0.35rem; }
+    .callout-box p { margin: 0.2rem 0; font-size: 0.88rem; color: #44403c; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -224,6 +262,20 @@ if st.session_state.stage == "upload":
     from utils.data_loader import (
         SAMPLE_DATASETS, load_sample, load_from_url, load_from_text, load_from_database,
     )
+
+    st.markdown(
+        '<div class="hero-row">'
+        '<div class="hero-item"><div class="hero-num">1</div><div class="hero-label">Upload a dataset</div></div>'
+        '<div class="hero-sep">→</div>'
+        '<div class="hero-item"><div class="hero-num">2</div><div class="hero-label">Describe your goal</div></div>'
+        '<div class="hero-sep">→</div>'
+        '<div class="hero-item"><div class="hero-num">3</div><div class="hero-label">Neo trains &amp; tunes 4 models</div></div>'
+        '<div class="hero-sep">→</div>'
+        '<div class="hero-item"><div class="hero-num">4</div><div class="hero-label">Get results, SHAP &amp; a download</div></div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown("")
 
     tab_sample, tab_upload, tab_url, tab_paste, tab_db = st.tabs(
         ["Sample datasets", "Upload CSV", "From URL", "Paste CSV", "Database"]
@@ -406,6 +458,31 @@ elif st.session_state.stage == "confirm":
             ("Dtype", str(df[confirmed_target].dtype)),
         ])
 
+        if confirmed_type == "classification":
+            counts = df[confirmed_target].value_counts()
+            fig_dist, ax_dist = plt.subplots(figsize=(6, 2.5))
+            ax_dist.barh(
+                [str(v) for v in counts.index],
+                counts.values,
+                color=PLOT_BROWN,
+            )
+            ax_dist.set_xlabel("Count")
+            ax_dist.set_title("Class distribution")
+            ax_dist.spines["top"].set_visible(False)
+            ax_dist.spines["right"].set_visible(False)
+            plt.tight_layout()
+            st.pyplot(fig_dist, use_container_width=True)
+            plt.close(fig_dist)
+
+            # imbalance warning: majority class > 80 %
+            majority_pct = counts.iloc[0] / counts.sum()
+            if majority_pct > 0.80:
+                st.warning(
+                    f"Class imbalance detected — the majority class represents "
+                    f"{majority_pct:.0%} of the data. Consider using AUC / F1 as "
+                    f"your primary metric rather than accuracy."
+                )
+
     from utils.data_quality import run_checks
     issues = run_checks(df, confirmed_target, confirmed_type)
     if issues:
@@ -435,12 +512,11 @@ elif st.session_state.stage == "running":
 
     from graph.pipeline import run_pipeline
 
-    def stream_status(msg: str) -> None:
-        add_message("assistant", msg)
-        with st.chat_message("assistant"):
-            st.markdown(msg)
+    with st.status("Running pipeline…", expanded=True) as pipeline_status:
+        def stream_status(msg: str) -> None:
+            add_message("assistant", msg)
+            pipeline_status.write(msg)
 
-    with st.spinner("Running pipeline…"):
         result = run_pipeline(
             df=st.session_state.df,
             user_goal=st.session_state.user_goal,
@@ -448,6 +524,7 @@ elif st.session_state.stage == "running":
             confirmed_target_col=st.session_state.confirmed_target,
             confirmed_problem_type=st.session_state.confirmed_problem_type,
         )
+        pipeline_status.update(label="Pipeline complete.", state="complete", expanded=False)
 
     st.session_state.agent_state = result
     st.session_state.stage = "results"
@@ -478,12 +555,47 @@ elif st.session_state.stage == "results":
         with st.chat_message("assistant"):
             st.markdown(state["report_md"])
 
+    # ── why this model callout ────────────────────────────────────────────────
+    best_name = state.get("best_model_name", "")
+    best_metrics = state.get("best_metrics", {})
+    top_features = state.get("top_features", [])
+    if best_name and best_metrics:
+        metric_highlights = " · ".join(f"**{k}**: {v}" for k, v in best_metrics.items())
+        feature_highlights = ", ".join(f"`{f}`" for f in top_features[:3]) if top_features else "N/A"
+        st.markdown(
+            f'<div class="callout-box">'
+            f'<div class="callout-title">Best model: {best_name}</div>'
+            f'<p>{metric_highlights}</p>'
+            f'<p>Top drivers: {feature_highlights}</p>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
     # ── model comparison ─────────────────────────────────────────────────────
     if state.get("results_df") is not None:
-        with st.expander("Model comparison", expanded=True):
-            st.dataframe(state["results_df"], use_container_width=True)
+        results_df = state["results_df"]
+        metric_cols = [c for c in results_df.columns if c != "Model"]
+        low_is_better = {"rmse", "mae"}
 
-    # ── plots side by side ───────────────────────────────────────────────────
+        def _style_leaderboard(df):
+            styled = df.style.format(
+                {c: "{:.4f}" for c in metric_cols if c in df.columns},
+                na_rep="—",
+            )
+            for col in metric_cols:
+                if col not in df.columns:
+                    continue
+                cmap = "RdYlGn_r" if col in low_is_better else "RdYlGn"
+                styled = styled.background_gradient(subset=[col], cmap=cmap, axis=0)
+            return styled
+
+        with st.expander("Model comparison", expanded=True):
+            st.dataframe(_style_leaderboard(results_df), use_container_width=True)
+
+    # ── plots ─────────────────────────────────────────────────────────────────
+    is_clf = st.session_state.confirmed_problem_type == "classification"
+
+    # row 1: SHAP + confidence / actual-vs-predicted
     plot_col1, plot_col2 = st.columns(2)
     with plot_col1:
         if state.get("shap_fig") is not None:
@@ -491,14 +603,80 @@ elif st.session_state.stage == "results":
                 st.pyplot(state["shap_fig"])
     with plot_col2:
         if state.get("confidence_fig") is not None:
-            is_clf = st.session_state.confirmed_problem_type == "classification"
             label = "Confidence distribution" if is_clf else "Actual vs Predicted"
             with st.expander(label, expanded=True):
                 st.pyplot(state["confidence_fig"])
 
+    # row 2: confusion matrix + ROC (classification) OR residuals (regression)
+    if is_clf:
+        diag_col1, diag_col2 = st.columns(2)
+        with diag_col1:
+            if state.get("confusion_fig") is not None:
+                with st.expander("Confusion matrix", expanded=True):
+                    st.pyplot(state["confusion_fig"])
+        with diag_col2:
+            if state.get("roc_fig") is not None:
+                with st.expander("ROC curve", expanded=True):
+                    st.pyplot(state["roc_fig"])
+    else:
+        if state.get("residual_fig") is not None:
+            with st.expander("Residual analysis", expanded=True):
+                st.pyplot(state["residual_fig"])
+
+    # ── prediction sandbox ────────────────────────────────────────────────────
+    df_eng = state.get("df_engineered") if state.get("df_engineered") is not None else st.session_state.df
+    target_col = st.session_state.confirmed_target
+    problem_type = st.session_state.confirmed_problem_type
+
+    if df_eng is not None and state.get("best_model") is not None:
+        st.markdown("---")
+        with st.expander("Prediction sandbox — try your own inputs", expanded=False):
+            st.caption("Enter values for each feature and get a live prediction from the best model.")
+            feature_cols = [c for c in df_eng.columns if c != target_col]
+
+            with st.form("sandbox_form"):
+                n_cols = 3
+                col_groups = [feature_cols[i:i+n_cols] for i in range(0, len(feature_cols), n_cols)]
+                input_data = {}
+                for group in col_groups:
+                    form_cols = st.columns(len(group))
+                    for fc, col_name in zip(form_cols, group):
+                        with fc:
+                            series = df_eng[col_name].dropna()
+                            if pd.api.types.is_numeric_dtype(series):
+                                input_data[col_name] = st.number_input(
+                                    col_name,
+                                    value=float(series.median()),
+                                    format="%.4g",
+                                )
+                            else:
+                                opts = sorted(series.unique().tolist())
+                                input_data[col_name] = st.selectbox(col_name, opts)
+
+                predict_btn = st.form_submit_button("Run prediction", type="primary")
+
+            if predict_btn:
+                try:
+                    from agents.data_agent import preprocess
+                    input_row = pd.DataFrame([input_data])
+                    input_row[target_col] = df_eng[target_col].iloc[0]
+                    combined = pd.concat([df_eng, input_row], ignore_index=True)
+                    X_all, _, _, _, _ = preprocess(combined, target_col, problem_type)
+                    X_input = X_all[[-1]]
+                    model = state["best_model"]
+                    pred = model.predict(X_input)[0]
+                    if problem_type == "classification" and hasattr(model, "predict_proba"):
+                        proba = model.predict_proba(X_input)[0]
+                        conf = float(proba.max()) * 100
+                        st.metric("Prediction", str(pred), delta=f"{conf:.1f}% confidence")
+                    else:
+                        st.metric("Prediction", f"{pred:.4g}")
+                except Exception as e:
+                    st.error(f"Prediction failed: {e}")
+
     # ── downloads ────────────────────────────────────────────────────────────
     st.markdown("---")
-    dl1, dl2, dl3 = st.columns(3)
+    dl1, dl2, dl3, dl4 = st.columns(4)
 
     with dl1:
         if state.get("model_bytes"):
@@ -510,6 +688,63 @@ elif st.session_state.stage == "results":
                 use_container_width=True,
             )
     with dl2:
+        if state.get("report_md"):
+            import re as _re
+
+            def _md_to_html(md: str) -> str:
+                lines = md.splitlines()
+                html_lines = []
+                for line in lines:
+                    # headings
+                    m = _re.match(r"^(#{1,4})\s+(.*)", line)
+                    if m:
+                        level = min(len(m.group(1)) + 1, 4)  # h2–h4
+                        html_lines.append(f"<h{level}>{m.group(2)}</h{level}>")
+                        continue
+                    # horizontal rule
+                    if _re.match(r"^---+$", line.strip()):
+                        html_lines.append("<hr>")
+                        continue
+                    # blank line → paragraph break
+                    if not line.strip():
+                        html_lines.append("<p></p>")
+                        continue
+                    # inline: escape HTML, then apply markdown
+                    text = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    text = _re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+                    text = _re.sub(r"\*(.+?)\*",     r"<em>\1</em>",         text)
+                    text = _re.sub(r"`(.+?)`",        r"<code>\1</code>",     text)
+                    # list items
+                    if _re.match(r"^[-*]\s+", text):
+                        text = "<li>" + _re.sub(r"^[-*]\s+", "", text) + "</li>"
+                    else:
+                        text = f"<p>{text}</p>"
+                    html_lines.append(text)
+                return "\n".join(html_lines)
+
+            report_html = (
+                "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
+                "<title>Neo — Model Report</title><style>"
+                "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
+                "max-width:820px;margin:48px auto;color:#1c1917;line-height:1.7}"
+                "h1,h2,h3,h4{color:#92400e;margin-top:1.8rem}"
+                "strong{font-weight:600}"
+                "code{background:#faf7f5;padding:2px 6px;border-radius:4px;font-size:.9em}"
+                "hr{border:none;border-top:1px solid #e7e0da;margin:32px 0}"
+                "li{margin:4px 0}"
+                "table{border-collapse:collapse;width:100%}"
+                "th,td{border:1px solid #e7e0da;padding:8px 12px;text-align:left}"
+                "th{background:#faf7f5;font-weight:600}"
+                f"</style></head><body>{_md_to_html(state['report_md'])}</body></html>"
+            )
+            st.download_button(
+                label="Download report (.html)",
+                data=report_html.encode(),
+                file_name="neo_report.html",
+                mime="text/html",
+                use_container_width=True,
+            )
+    with dl3:
         if state.get("inference_zip"):
             st.download_button(
                 label="Download inference package (.zip)",
@@ -519,7 +754,7 @@ elif st.session_state.stage == "results":
                 help="best_model.pkl + predict.py + serve.py (FastAPI) + README",
                 use_container_width=True,
             )
-    with dl3:
+    with dl4:
         try:
             import mlflow  # noqa: F401
             if st.button("Open MLflow tracker", use_container_width=True):
