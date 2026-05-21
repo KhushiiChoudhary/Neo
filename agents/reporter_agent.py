@@ -72,15 +72,19 @@ def generate_shap_plot(model, X_test: np.ndarray, feature_names: list) -> tuple:
         else:
             shap_matrix = np.abs(shap_values)
 
+        # collapse to 1-D: mean over samples first, then over any remaining axes
         mean_shap = shap_matrix.mean(axis=0)
+        while mean_shap.ndim > 1:
+            mean_shap = mean_shap.mean(axis=-1)
 
     except Exception:
         if not hasattr(model, "feature_importances_"):
             return None, feature_names[:5]
         mean_shap = model.feature_importances_
 
+    mean_shap = np.asarray(mean_shap).ravel()
     top_idx = np.argsort(mean_shap)[::-1][:10]
-    top_features = [feature_names[i] for i in top_idx]
+    top_features = [feature_names[int(i)] for i in top_idx]
     top_vals = mean_shap[top_idx].tolist()
 
     fig = _horizontal_bar_chart(top_features, top_vals, "Mean |SHAP value|", "Feature Importance (SHAP)")
@@ -179,15 +183,15 @@ def run(
     status_callback=None,
 ) -> dict:
     if status_callback:
-        status_callback("📊 Generating SHAP feature importance plot…")
+        status_callback("Generating SHAP feature importance plot.")
     shap_fig, top_features = generate_shap_plot(best_model, X_test, feature_names)
 
     if status_callback:
-        status_callback("📈 Generating confidence plot…")
+        status_callback("Generating confidence plot.")
     confidence_fig = generate_confidence_plot(best_model, X_test, y_test, problem_type)
 
     if status_callback:
-        status_callback("✍️ Writing plain English report…")
+        status_callback("Writing report.")
     report_md = write_report(user_goal, best_model_name, best_metrics, results_df, top_features)
 
     model_bytes = save_model(best_model)

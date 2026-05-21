@@ -250,7 +250,7 @@ def run(
 
     for name in model_names:
         if status_callback:
-            status_callback(f"⚙️ Tuning **{name}** ({n_trials} trials)…")
+            status_callback(f"Tuning **{name}** ({n_trials} trials).")
 
         result = tune_model(name, problem_type, X_train, y_train, X_test, y_test, n_trials)
         results.append(result)
@@ -260,7 +260,7 @@ def run(
 
         if status_callback:
             metric_str = " · ".join(f"{k}: {v}" for k, v in result["metrics"].items())
-            status_callback(f"✅ **{name}** done: {metric_str}")
+            status_callback(f"**{name}** — {metric_str}")
 
     # build comparison dataframe
     rows = []

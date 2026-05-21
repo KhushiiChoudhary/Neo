@@ -61,7 +61,7 @@ def run(
     status_callback=None,
 ) -> dict:
     if status_callback:
-        status_callback("🛠️ **Feature Engineering Agent**: asking GPT-4o to suggest new features...")
+        status_callback("**Feature Engineering Agent**: generating new features.")
 
     features = suggest_features(profile, target_col, user_goal)
     df_enriched, applied = apply_features(df, features)
@@ -70,11 +70,11 @@ def run(
         if applied:
             names = ", ".join(f"`{f['name']}`" for f in applied)
             status_callback(
-                f"✅ **{len(applied)} new features created:** {names}\n\n"
+                f"**{len(applied)} new features created:** {names}\n\n"
                 + "\n".join(f"- **{f['name']}**: {f['rationale']}" for f in applied)
             )
         else:
-            status_callback("ℹ️ Feature engineering: no safe features could be generated for this dataset.")
+            status_callback("Feature engineering: no safe features could be generated for this dataset.")
 
     return {
         "df_engineered": df_enriched,

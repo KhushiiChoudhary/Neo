@@ -8,8 +8,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 st.set_page_config(
-    page_title="AutoML Agent",
-    page_icon="🤖",
+    page_title="Neo — AutoML Agent",
+    page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -20,6 +20,7 @@ st.markdown(
     <style>
     /* ── base ── */
     .stApp { background-color: #ffffff; }
+    header[data-testid="stHeader"] { display: none; }
     .block-container { padding-top: 1.5rem; }
 
     /* ── header ── */
@@ -187,14 +188,14 @@ with st.sidebar:
     st.divider()
 
     st.markdown('<div class="sidebar-title">Tech stack</div>', unsafe_allow_html=True)
-    tech = ["GPT-4o", "LangGraph", "Optuna", "MLflow", "SHAP", "XGBoost", "LightGBM"]
+    tech = ["GPT-5.4", "LangGraph", "Optuna", "MLflow", "SHAP", "XGBoost", "LightGBM"]
     st.markdown(
         " ".join(f'<span class="tech-badge">{t}</span>' for t in tech),
         unsafe_allow_html=True,
     )
     st.divider()
 
-    if st.button("↺ Reset session", use_container_width=True):
+    if st.button("Reset session", use_container_width=True):
         for k in list(st.session_state.keys()):
             del st.session_state[k]
         st.rerun()
@@ -225,11 +226,12 @@ if st.session_state.stage == "upload":
     )
 
     tab_sample, tab_upload, tab_url, tab_paste, tab_db = st.tabs(
-        ["✨ Sample datasets", "📁 Upload CSV", "🌐 From URL", "📋 Paste CSV", "🗄️ Database"]
+        ["Sample datasets", "Upload CSV", "From URL", "Paste CSV", "Database"]
     )
 
-    df: pd.DataFrame | None = None
-    source_name: str = ""
+    # restore previously loaded df across reruns
+    df: pd.DataFrame | None = st.session_state.get("staged_df", None)
+    source_name: str = st.session_state.get("staged_source", "")
 
     # ── tab: sample datasets ─────────────────────────────────────────────────
     with tab_sample:
@@ -245,6 +247,8 @@ if st.session_state.stage == "upload":
                 try:
                     df = load_sample(choice)
                     source_name = choice.split(":")[0].strip()
+                    st.session_state.staged_df = df
+                    st.session_state.staged_source = source_name
                 except Exception as e:
                     st.error(f"Failed to load: {e}")
 
@@ -254,6 +258,8 @@ if st.session_state.stage == "upload":
         if uploaded:
             df = pd.read_csv(uploaded)
             source_name = uploaded.name
+            st.session_state.staged_df = df
+            st.session_state.staged_source = source_name
 
     # ── tab: url ─────────────────────────────────────────────────────────────
     with tab_url:
@@ -264,6 +270,8 @@ if st.session_state.stage == "upload":
                 try:
                     df = load_from_url(url_input.strip())
                     source_name = url_input.strip().split("/")[-1] or "url_data"
+                    st.session_state.staged_df = df
+                    st.session_state.staged_source = source_name
                 except Exception as e:
                     st.error(f"Could not load URL: {e}")
 
@@ -275,6 +283,8 @@ if st.session_state.stage == "upload":
             try:
                 df = load_from_text(pasted)
                 source_name = "pasted_data"
+                st.session_state.staged_df = df
+                st.session_state.staged_source = source_name
             except Exception as e:
                 st.error(f"Could not parse CSV: {e}")
 
@@ -297,6 +307,8 @@ if st.session_state.stage == "upload":
                 try:
                     df = load_from_database(conn_str.strip(), query.strip())
                     source_name = "database_query"
+                    st.session_state.staged_df = df
+                    st.session_state.staged_source = source_name
                 except Exception as e:
                     st.error(f"Database error: {e}")
 
@@ -319,26 +331,34 @@ if st.session_state.stage == "upload":
             "What do you want to predict?",
             placeholder='e.g. "Predict which customers will churn" or "Forecast house prices"',
             height=100,
+            key="staged_goal",
         )
 
-        if st.button("🔍 Analyze Data", type="primary", disabled=not goal.strip()):
-            st.session_state.df = df
-            st.session_state.filename = source_name
-            st.session_state.user_goal = goal.strip()
+        if st.button("Analyze Data", type="primary", disabled=not goal.strip()):
+            with st.spinner("Analyzing your data…"):
+                try:
+                    from agents.data_agent import profile_dataframe, identify_target
+                    profile = profile_dataframe(df)
+                    identification = identify_target(profile, goal.strip())
+                except Exception as e:
+                    st.error(f"Analysis failed: {e}")
+                    st.stop()
+
+            # only record the message after a successful API call
             add_message(
                 "user",
                 f"**Goal:** {goal.strip()}\n\n**Source:** {source_name} "
                 f"({df.shape[0]:,} rows × {df.shape[1]} cols)",
             )
-            with st.spinner("Analyzing your data…"):
-                from agents.data_agent import profile_dataframe, identify_target
-                profile = profile_dataframe(df)
-                identification = identify_target(profile, goal.strip())
-
+            st.session_state.df = df
+            st.session_state.filename = source_name
+            st.session_state.user_goal = goal.strip()
             st.session_state.suggested_target = identification["target_col"]
             st.session_state.suggested_problem_type = identification["problem_type"]
             st.session_state.suggested_reasoning = identification["reasoning"]
             st.session_state.stage = "confirm"
+            st.session_state.pop("staged_df", None)
+            st.session_state.pop("staged_source", None)
             st.rerun()
 
 
@@ -396,12 +416,12 @@ elif st.session_state.stage == "confirm":
             else:
                 st.warning(issue["message"])
 
-    if st.button("🚀 Start Training", type="primary"):
+    if st.button("Start Training", type="primary"):
         st.session_state.confirmed_target = confirmed_target
         st.session_state.confirmed_problem_type = confirmed_type
         add_message(
             "assistant",
-            f"✅ **Confirmed:** predicting `{confirmed_target}` ({confirmed_type}). Starting pipeline…",
+            f"Confirmed: predicting `{confirmed_target}` ({confirmed_type}). Starting pipeline.",
         )
         st.session_state.stage = "running"
         st.rerun()
@@ -448,7 +468,7 @@ elif st.session_state.stage == "results":
     # ── engineered features ──────────────────────────────────────────────────
     engineered = state.get("engineered_features", [])
     if engineered:
-        with st.expander(f"✨ {len(engineered)} new features engineered", expanded=False):
+        with st.expander(f"{len(engineered)} new features engineered", expanded=False):
             for f in engineered:
                 st.markdown(f"**`{f['name']}`**: {f['rationale']}")
                 st.code(f["expression"], language="python")
@@ -483,7 +503,7 @@ elif st.session_state.stage == "results":
     with dl1:
         if state.get("model_bytes"):
             st.download_button(
-                label="⬇️ Model (.pkl)",
+                label="Download model (.pkl)",
                 data=state["model_bytes"],
                 file_name="best_model.pkl",
                 mime="application/octet-stream",
@@ -492,7 +512,7 @@ elif st.session_state.stage == "results":
     with dl2:
         if state.get("inference_zip"):
             st.download_button(
-                label="⬇️ Inference package (.zip)",
+                label="Download inference package (.zip)",
                 data=state["inference_zip"],
                 file_name="inference_package.zip",
                 mime="application/zip",
@@ -502,7 +522,7 @@ elif st.session_state.stage == "results":
     with dl3:
         try:
             import mlflow  # noqa: F401
-            if st.button("📊 Open MLflow tracker", use_container_width=True):
+            if st.button("Open MLflow tracker", use_container_width=True):
                 subprocess.Popen(
                     ["mlflow", "ui", "--port", "5001"],
                     cwd="/Users/khushichoudhary/Neo",

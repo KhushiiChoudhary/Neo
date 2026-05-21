@@ -71,7 +71,10 @@ def preprocess(
         le = LabelEncoder()
         y = pd.Series(le.fit_transform(y.astype(str)), name=target_col)
 
-    # split numeric vs categorical features
+    # split numeric vs categorical features (treat booleans as numeric)
+    X = X.copy()
+    for col in X.select_dtypes(include=["bool"]).columns:
+        X[col] = X[col].astype(int)
     num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
     cat_cols = X.select_dtypes(exclude=[np.number]).columns.tolist()
 
@@ -84,6 +87,9 @@ def preprocess(
 
     # impute + encode categoricals
     if cat_cols:
+        # normalise to object dtype: preserve NaN, cast everything else to str
+        for col in cat_cols:
+            X[col] = X[col].where(pd.isna(X[col]), X[col].astype(str))
         cat_imputer = SimpleImputer(strategy="most_frequent")
         X[cat_cols] = cat_imputer.fit_transform(X[cat_cols])
         for col in cat_cols:
