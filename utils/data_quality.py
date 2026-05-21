@@ -51,7 +51,7 @@ def _check_leakage_risk(df: pd.DataFrame, target_col: str, threshold: float = 0.
         try:
             corr = abs(df_clean[col].fillna(0).corr(pd.Series(target_enc, index=df_clean.index)))
             if corr > threshold:
-                issues.append({"level": "error", "message": f"`{col}` has {corr:.2f} Pearson correlation with the target — likely data leakage. Consider removing it."})
+                issues.append({"level": "error", "message": f"`{col}` has {corr:.2f} Pearson correlation with the target. Likely data leakage; consider removing it."})
         except Exception:
             continue
 
@@ -70,7 +70,7 @@ def _check_leakage_risk(df: pd.DataFrame, target_col: str, threshold: float = 0.
         for col, score in zip(feature_cols, mi_scores):
             normalised = score / mi_max
             if normalised > 0.95 and col not in [i["message"].split("`")[1] for i in issues]:
-                issues.append({"level": "error", "message": f"`{col}` has very high mutual information with the target (normalised score {normalised:.2f}) — possible leakage."})
+                issues.append({"level": "error", "message": f"`{col}` has very high mutual information with the target (normalised score {normalised:.2f}). Possible leakage."})
     except Exception:
         pass
 

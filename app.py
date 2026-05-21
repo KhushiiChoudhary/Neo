@@ -478,7 +478,7 @@ elif st.session_state.stage == "confirm":
             majority_pct = counts.iloc[0] / counts.sum()
             if majority_pct > 0.80:
                 st.warning(
-                    f"Class imbalance detected — the majority class represents "
+                    f"Class imbalance detected: the majority class represents "
                     f"{majority_pct:.0%} of the data. Consider using AUC / F1 as "
                     f"your primary metric rather than accuracy."
                 )
@@ -580,7 +580,7 @@ elif st.session_state.stage == "results":
         def _style_leaderboard(df):
             styled = df.style.format(
                 {c: "{:.4f}" for c in metric_cols if c in df.columns},
-                na_rep="—",
+                na_rep="N/A",
             )
             for col in metric_cols:
                 if col not in df.columns:
@@ -630,7 +630,7 @@ elif st.session_state.stage == "results":
 
     if df_eng is not None and state.get("best_model") is not None:
         st.markdown("---")
-        with st.expander("Prediction sandbox — try your own inputs", expanded=False):
+        with st.expander("Prediction sandbox: try your own inputs", expanded=False):
             st.caption("Enter values for each feature and get a live prediction from the best model.")
             feature_cols = [c for c in df_eng.columns if c != target_col]
 
@@ -724,7 +724,7 @@ elif st.session_state.stage == "results":
 
             report_html = (
                 "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
-                "<title>Neo — Model Report</title><style>"
+                "<title>Neo: Model Report</title><style>"
                 "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
                 "max-width:820px;margin:48px auto;color:#1c1917;line-height:1.7}"
                 "h1,h2,h3,h4{color:#92400e;margin-top:1.8rem}"

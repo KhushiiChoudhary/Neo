@@ -277,7 +277,7 @@ def run(
         if status_callback:
             metric_str = " · ".join(f"{k}: {v}" for k, v in result["metrics"].items())
             cv_str = f" · cv: {result['cv_mean']} ±{result['cv_std']}" if result.get("cv_mean") is not None else ""
-            status_callback(f"**{name}** — {metric_str}{cv_str}")
+            status_callback(f"**{name}**: {metric_str}{cv_str}")
 
     # build comparison dataframe
     rows = []
