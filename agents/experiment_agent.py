@@ -122,11 +122,19 @@ def tune_model(
     X_test,
     y_test,
     n_trials: int = 25,
+    status_callback=None,
 ) -> dict:
     """Run Optuna tuning for one model. Returns metrics + best model."""
     objective = _make_objective(model_name, problem_type, X_train, y_train, X_test, y_test)
     study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+
+    # send a progress ping every 5 trials to keep the WebSocket alive on cloud
+    def _trial_cb(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
+        if status_callback and trial.number % 5 == 0 and trial.number > 0:
+            best = round(study.best_value, 4)
+            status_callback(f"Tuning **{model_name}**: trial {trial.number}/{n_trials}, best so far: {best}")
+
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=False, callbacks=[_trial_cb])
 
     best_params = study.best_params
 
@@ -268,7 +276,7 @@ def run(
         if status_callback:
             status_callback(f"Tuning **{name}** ({n_trials} trials).")
 
-        result = tune_model(name, problem_type, X_train, y_train, X_test, y_test, n_trials)
+        result = tune_model(name, problem_type, X_train, y_train, X_test, y_test, n_trials, status_callback)
         results.append(result)
 
         if best_result is None or result["primary_metric"] > best_result["primary_metric"]:

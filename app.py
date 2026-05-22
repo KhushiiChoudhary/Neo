@@ -233,7 +233,7 @@ with st.sidebar:
     )
     st.divider()
 
-    if st.button("Reset session", use_container_width=True):
+    if st.button("Reset session", width="stretch"):
         for k in list(st.session_state.keys()):
             del st.session_state[k]
         st.rerun()
@@ -377,7 +377,7 @@ if st.session_state.stage == "upload":
         ])
 
         with st.expander("Preview (first 5 rows)", expanded=True):
-            st.dataframe(df.head(), use_container_width=True)
+            st.dataframe(df.head(), width="stretch")
 
         goal = st.text_area(
             "What do you want to predict?",
@@ -471,7 +471,7 @@ elif st.session_state.stage == "confirm":
             ax_dist.spines["top"].set_visible(False)
             ax_dist.spines["right"].set_visible(False)
             plt.tight_layout()
-            st.pyplot(fig_dist, use_container_width=True)
+            st.pyplot(fig_dist, width="stretch")
             plt.close(fig_dist)
 
             # imbalance warning: majority class > 80 %
@@ -590,7 +590,7 @@ elif st.session_state.stage == "results":
             return styled
 
         with st.expander("Model comparison", expanded=True):
-            st.dataframe(_style_leaderboard(results_df), use_container_width=True)
+            st.dataframe(_style_leaderboard(results_df), width="stretch")
 
     # ── plots ─────────────────────────────────────────────────────────────────
     is_clf = st.session_state.confirmed_problem_type == "classification"
@@ -685,7 +685,7 @@ elif st.session_state.stage == "results":
                 data=state["model_bytes"],
                 file_name="best_model.pkl",
                 mime="application/octet-stream",
-                use_container_width=True,
+                width="stretch",
             )
     with dl2:
         if state.get("report_md"):
@@ -742,7 +742,7 @@ elif st.session_state.stage == "results":
                 data=report_html.encode(),
                 file_name="neo_report.html",
                 mime="text/html",
-                use_container_width=True,
+                width="stretch",
             )
     with dl3:
         if state.get("inference_zip"):
@@ -752,12 +752,12 @@ elif st.session_state.stage == "results":
                 file_name="inference_package.zip",
                 mime="application/zip",
                 help="best_model.pkl + predict.py + serve.py (FastAPI) + README",
-                use_container_width=True,
+                width="stretch",
             )
     with dl4:
         try:
             import mlflow  # noqa: F401
-            if st.button("Open MLflow tracker", use_container_width=True):
+            if st.button("Open MLflow tracker", width="stretch"):
                 subprocess.Popen(
                     ["mlflow", "ui", "--port", "5001"],
                     cwd="/Users/khushichoudhary/Neo",
