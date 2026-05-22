@@ -270,29 +270,37 @@ def run(
     status_callback=None,
 ) -> dict:
     if status_callback:
-        status_callback("Generating SHAP feature importance plot.")
+        status_callback("Computing SHAP feature importance.")
     shap_fig, top_features = generate_shap_plot(best_model, X_test, feature_names)
 
     if status_callback:
-        status_callback("Generating confidence plot.")
+        status_callback("Building confidence plot.")
     confidence_fig = generate_confidence_plot(best_model, X_test, y_test, problem_type)
 
     confusion_fig = roc_fig = residual_fig = None
     if problem_type == "classification":
         if status_callback:
-            status_callback("Generating confusion matrix.")
+            status_callback("Building confusion matrix.")
         confusion_fig = generate_confusion_matrix_plot(best_model, X_test, y_test)
         if status_callback:
-            status_callback("Generating ROC curve.")
+            status_callback("Building ROC curve.")
         roc_fig = generate_roc_curve_plot(best_model, X_test, y_test)
     else:
         if status_callback:
-            status_callback("Generating residual analysis.")
+            status_callback("Building residual analysis.")
         residual_fig = generate_residual_plot(best_model, X_test, y_test)
 
     if status_callback:
-        status_callback("Writing report.")
-    report_md = write_report(user_goal, best_model_name, best_metrics, results_df, top_features)
+        status_callback("Writing summary report…")
+    try:
+        report_md = write_report(user_goal, best_model_name, best_metrics, results_df, top_features)
+    except Exception:
+        metric_str = " · ".join(f"{k}: {v}" for k, v in best_metrics.items())
+        report_md = (
+            f"**Best model:** {best_model_name}  \n"
+            f"**Metrics:** {metric_str}  \n\n"
+            f"**Top features:** {', '.join(top_features)}"
+        )
 
     model_bytes = save_model(best_model)
     inference_zip = build_zip(model_bytes, best_model_name, feature_names, problem_type)

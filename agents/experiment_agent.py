@@ -208,8 +208,9 @@ def tune_model(
         cv_scoring = "r2"
 
     # 5-fold cross-validation on the full dataset with best params
+    # n_jobs=1 avoids multiprocessing issues on Streamlit Cloud
     try:
-        cv_raw = cross_val_score(best_model, X_all, y_all, cv=5, scoring=cv_scoring, n_jobs=-1)
+        cv_raw = cross_val_score(best_model, X_all, y_all, cv=5, scoring=cv_scoring, n_jobs=1)
         cv_mean = round(float(cv_raw.mean()), 4)
         cv_std  = round(float(cv_raw.std()), 4)
     except Exception:
