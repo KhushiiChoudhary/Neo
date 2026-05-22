@@ -128,15 +128,18 @@ def tune_model(
     objective = _make_objective(model_name, problem_type, X_train, y_train, X_test, y_test)
     study = optuna.create_study(direction="maximize")
 
-    # send a progress ping every 5 trials to keep the WebSocket alive on cloud
+    # ping every trial to keep the WebSocket alive on cloud deployments
     def _trial_cb(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
-        if status_callback and trial.number % 5 == 0 and trial.number > 0:
+        if status_callback:
             best = round(study.best_value, 4)
             status_callback(
-                f"Optimizing **{model_name}**: trial {trial.number}/{n_trials} complete, best score so far: {best}"
+                f"Tuning **{model_name}**: trial {trial.number + 1}/{n_trials} · best so far: {best}"
             )
 
     study.optimize(objective, n_trials=n_trials, show_progress_bar=False, callbacks=[_trial_cb])
+
+    if status_callback:
+        status_callback(f"**{model_name}** tuning complete. Running cross-validation…")
 
     best_params = study.best_params
 

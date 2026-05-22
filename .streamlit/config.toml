@@ -9,3 +9,8 @@ font                = "sans serif"
 [server]
 maxUploadSize = 200
 enableWebsocketCompression = false
+headless = true
+runOnSave = false
+
+[browser]
+gatherUsageStats = false

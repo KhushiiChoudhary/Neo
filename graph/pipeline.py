@@ -61,29 +61,34 @@ def data_node(state: AgentState) -> AgentState:
     confirmed_target = state.get("confirmed_target_col")
     confirmed_type = state.get("confirmed_problem_type")
 
-    if confirmed_target:
-        if cb:
-            cb(
-                f"**Target column confirmed:** `{confirmed_target}` "
-                f"({confirmed_type}). Preprocessing data."
-            )
-    else:
-        if cb:
-            cb("**Data Agent**: profiling dataset and identifying target column.")
+    try:
+        if confirmed_target:
+            if cb:
+                cb(
+                    f"**Target column confirmed:** `{confirmed_target}` "
+                    f"({confirmed_type}). Preprocessing data."
+                )
+        else:
+            if cb:
+                cb("**Data Agent**: profiling dataset and identifying target column.")
 
-    result = data_agent.run(
-        df=state["df_raw"],
-        user_goal=state["user_goal"],
-        confirmed_target_col=confirmed_target,
-        confirmed_problem_type=confirmed_type,
-    )
-
-    if not confirmed_target and cb:
-        cb(
-            f"**Target column identified:** `{result['target_col']}` "
-            f"({result['problem_type']})\n\n"
-            f"_{result['target_reasoning']}_"
+        result = data_agent.run(
+            df=state["df_raw"],
+            user_goal=state["user_goal"],
+            confirmed_target_col=confirmed_target,
+            confirmed_problem_type=confirmed_type,
         )
+
+        if not confirmed_target and cb:
+            cb(
+                f"**Target column identified:** `{result['target_col']}` "
+                f"({result['problem_type']})\n\n"
+                f"_{result['target_reasoning']}_"
+            )
+    except Exception as exc:
+        if cb:
+            cb(f"⚠️ **Data Agent error:** {exc}")
+        raise
 
     return {**state, **result}
 
@@ -93,21 +98,26 @@ def feature_node(state: AgentState) -> AgentState:
 
     cb = state.get("status_callback")
 
-    result = feature_agent.run(
-        df=state["df_raw"],
-        profile=state["profile"],
-        target_col=state["target_col"],
-        user_goal=state["user_goal"],
-        status_callback=cb,
-    )
+    try:
+        result = feature_agent.run(
+            df=state["df_raw"],
+            profile=state["profile"],
+            target_col=state["target_col"],
+            user_goal=state["user_goal"],
+            status_callback=cb,
+        )
 
-    # re-preprocess the enriched dataframe so new features are included
-    from agents.data_agent import preprocess
-    X_train, X_test, y_train, y_test, feature_names = preprocess(
-        result["df_engineered"],
-        state["target_col"],
-        state["problem_type"],
-    )
+        # re-preprocess the enriched dataframe so new features are included
+        from agents.data_agent import preprocess
+        X_train, X_test, y_train, y_test, feature_names = preprocess(
+            result["df_engineered"],
+            state["target_col"],
+            state["problem_type"],
+        )
+    except Exception as exc:
+        if cb:
+            cb(f"⚠️ **Feature Agent error:** {exc}")
+        raise
 
     return {
         **state,
@@ -127,15 +137,32 @@ def experiment_node(state: AgentState) -> AgentState:
     if cb:
         cb("**Experiment Agent**: running 4 models with Optuna hyperparameter tuning.")
 
-    result = experiment_agent.run(
-        X_train=state["X_train"],
-        X_test=state["X_test"],
-        y_train=state["y_train"],
-        y_test=state["y_test"],
-        problem_type=state["problem_type"],
-        n_trials=25,
-        status_callback=cb,
-    )
+    # fewer trials for larger datasets to avoid websocket timeout on cloud
+    n_rows = len(state.get("df_raw", []))
+    if n_rows > 10_000:
+        n_trials = 10
+    elif n_rows > 3_000:
+        n_trials = 15
+    else:
+        n_trials = 25
+
+    if cb:
+        cb(f"Dataset has {n_rows:,} rows — using {n_trials} Optuna trials per model.")
+
+    try:
+        result = experiment_agent.run(
+            X_train=state["X_train"],
+            X_test=state["X_test"],
+            y_train=state["y_train"],
+            y_test=state["y_test"],
+            problem_type=state["problem_type"],
+            n_trials=n_trials,
+            status_callback=cb,
+        )
+    except Exception as exc:
+        if cb:
+            cb(f"⚠️ **Experiment Agent error:** {exc}")
+        raise
 
     if cb:
         metric_str = " · ".join(f"{k}: **{v}**" for k, v in result["best_metrics"].items())
@@ -151,18 +178,23 @@ def reporter_node(state: AgentState) -> AgentState:
     if cb:
         cb("**Reporter Agent**: building SHAP plot and writing summary.")
 
-    result = reporter_agent.run(
-        user_goal=state["user_goal"],
-        best_model=state["best_model"],
-        best_model_name=state["best_model_name"],
-        best_metrics=state["best_metrics"],
-        results_df=state["results_df"],
-        X_test=state["X_test"],
-        y_test=state["y_test"],
-        feature_names=state["feature_names"],
-        problem_type=state["problem_type"],
-        status_callback=cb,
-    )
+    try:
+        result = reporter_agent.run(
+            user_goal=state["user_goal"],
+            best_model=state["best_model"],
+            best_model_name=state["best_model_name"],
+            best_metrics=state["best_metrics"],
+            results_df=state["results_df"],
+            X_test=state["X_test"],
+            y_test=state["y_test"],
+            feature_names=state["feature_names"],
+            problem_type=state["problem_type"],
+            status_callback=cb,
+        )
+    except Exception as exc:
+        if cb:
+            cb(f"⚠️ **Reporter Agent error:** {exc}")
+        raise
 
     return {**state, **result}
 
