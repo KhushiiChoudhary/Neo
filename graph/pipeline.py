@@ -140,11 +140,11 @@ def experiment_node(state: AgentState) -> AgentState:
     # fewer trials for larger datasets to avoid websocket timeout on cloud
     n_rows = len(state.get("df_raw", []))
     if n_rows > 10_000:
-        n_trials = 10
+        n_trials = 5
     elif n_rows > 3_000:
-        n_trials = 15
+        n_trials = 8
     else:
-        n_trials = 25
+        n_trials = 10
 
     if cb:
         cb(f"Dataset has {n_rows:,} rows — using {n_trials} Optuna trials per model.")
