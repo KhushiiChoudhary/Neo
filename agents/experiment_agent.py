@@ -132,7 +132,9 @@ def tune_model(
     def _trial_cb(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
         if status_callback and trial.number % 5 == 0 and trial.number > 0:
             best = round(study.best_value, 4)
-            status_callback(f"Tuning **{model_name}**: trial {trial.number}/{n_trials}, best so far: {best}")
+            status_callback(
+                f"Optimizing **{model_name}**: trial {trial.number}/{n_trials} complete, best score so far: {best}"
+            )
 
     study.optimize(objective, n_trials=n_trials, show_progress_bar=False, callbacks=[_trial_cb])
 
@@ -274,7 +276,7 @@ def run(
 
     for name in model_names:
         if status_callback:
-            status_callback(f"Tuning **{name}** ({n_trials} trials).")
+            status_callback(f"Optimizing **{name}** across {n_trials} trials.")
 
         result = tune_model(name, problem_type, X_train, y_train, X_test, y_test, n_trials, status_callback)
         results.append(result)

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import re
 import subprocess
+from contextlib import contextmanager
+from html import escape
+
 import pandas as pd
 import streamlit as st
 import matplotlib
@@ -8,7 +12,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from dotenv import load_dotenv
 
-PLOT_BROWN = "#92400e"
+PLOT_ACCENT = "#4f46e5"
 
 load_dotenv()
 
@@ -16,120 +20,458 @@ st.set_page_config(
     page_title="Neo: AutoML Agent",
     page_icon=None,
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown(
     """
     <style>
+    :root {
+        --neo-bg: #FAFAF8;
+        --neo-panel: #FFFFFF;
+        --neo-panel-strong: #FFFFFF;
+        --neo-border: #E8E6E0;
+        --neo-border-strong: #D0CEC8;
+        --neo-text: #1A1A18;
+        --neo-muted: #6B6A66;
+        --neo-soft: #9A9892;
+        --neo-accent: #5C4EE5;
+        --neo-accent-soft: #6366F1;
+        --neo-accent-bg: #EEEDFE;
+        --neo-accent-text: #534AB7;
+    }
+
     /* ── base ── */
-    .stApp { background-color: #ffffff; }
+    .stApp {
+        background: var(--neo-bg);
+        color: var(--neo-text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
     header[data-testid="stHeader"] { display: none; }
-    .block-container { padding-top: 1.5rem; }
+    section[data-testid="stSidebar"] { display: none; }
+    div[data-testid="collapsedControl"] { display: none; }
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+        max-width: 1120px;
+        margin: 0 auto;
+        padding-left: 2rem;
+        padding-right: 2rem;
+    }
+    .stMarkdown p,
+    .stMarkdown span,
+    .stMarkdown div,
+    label,
+    .stCaption {
+        color: var(--neo-text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    div[data-testid="stCaptionContainer"] p {
+        color: var(--neo-muted) !important;
+        font-size: 13px !important;
+        line-height: 1.5 !important;
+    }
+    div[data-testid="stVerticalBlock"] > div:has(> .neo-shell) {
+        gap: 0;
+    }
 
     /* ── header ── */
-    .main-header {
-        font-size: 1.6rem;
-        font-weight: 700;
-        line-height: 1.5;
-        color: #92400e;
-        margin-bottom: 0.1rem;
-    }
-    .sub-header { color: #78716c; font-size: 0.85rem; }
-
-    /* ── progress stepper ── */
-    .stepper { display: flex; align-items: flex-start; margin: 1.2rem 0 1.6rem 0; }
-    .step { display: flex; flex-direction: column; align-items: center; flex: 1; }
-    .step-circle {
-        width: 30px; height: 30px; border-radius: 50%;
-        display: flex; align-items: center; justify-content: center;
-        font-size: 0.8rem; font-weight: 700;
-    }
-    .step-circle.done   { background: #92400e; color: #fff; }
-    .step-circle.active {
-        background: linear-gradient(135deg, #92400e, #b45309);
-        color: #fff;
-        box-shadow: 0 0 14px #92400e55;
-    }
-    .step-circle.pending { background: #f5f0ed; color: #a8a29e; border: 1px solid #e7e0da; }
-    .step-label { font-size: 0.68rem; margin-top: 5px; text-align: center; }
-    .step-label.done    { color: #92400e; }
-    .step-label.active  { color: #b45309; font-weight: 600; }
-    .step-label.pending { color: #a8a29e; }
-    .step-connector { flex: 1; height: 2px; margin: 14px 3px 0 3px; }
-    .step-connector.done    { background: #92400e; }
-    .step-connector.pending { background: #e7e0da; }
-
-    /* ── stat cards ── */
-    .stat-row { display: flex; gap: 12px; margin: 0.8rem 0; }
-    .stat-card {
-        flex: 1;
-        background: #faf7f5;
-        border: 1px solid #e7e0da;
-        border-radius: 10px;
-        padding: 0.9rem 1rem;
-        text-align: center;
-    }
-    .stat-value { font-size: 1.35rem; font-weight: 700; color: #1c1917; }
-    .stat-label { font-size: 0.72rem; color: #78716c; margin-top: 3px; }
-
-    /* ── confirm panel ── */
-    .confirm-box {
-        background: #faf7f5;
-        border: 1px solid #d4a574;
+    .neo-shell {
+        border: 1px solid var(--neo-border);
         border-radius: 12px;
-        padding: 1.2rem 1.5rem;
-        margin: 0.8rem 0 1rem 0;
+        padding: 1.5rem;
+        margin-bottom: 1.25rem;
+        background: var(--neo-panel);
     }
-
-    /* ── sidebar ── */
-    section[data-testid="stSidebar"] { background: #faf7f5; border-right: 1px solid #e7e0da; }
-    .sidebar-section { margin-bottom: 1.4rem; }
-    .sidebar-title { font-size: 0.7rem; font-weight: 700; color: #a8a29e; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.5rem; }
-    .tech-badge {
-        display: inline-block;
-        background: #ffffff;
-        border: 1px solid #e7e0da;
-        border-radius: 6px;
-        padding: 2px 8px;
-        font-size: 0.72rem;
-        color: #78716c;
-        margin: 2px;
+    .neo-header-grid {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        gap: 0.4rem;
     }
-
-    /* ── hero row (upload screen) ── */
-    .hero-row {
+    .neo-brand-name {
+        font-size: clamp(1.2rem, 2vw, 1.6rem);
+        font-weight: 400;
+        letter-spacing: -0.01em;
+        color: var(--neo-accent);
+    }
+    .neo-title {
+        margin: 0;
+        font-size: clamp(1rem, 1.8vw, 1.2rem);
+        font-weight: 400;
+        line-height: 1.5;
+        letter-spacing: -0.01em;
+        color: var(--neo-muted);
+    }
+    /* ── progress stepper ── */
+    .stepper {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-        background: #faf7f5;
-        border: 1px solid #e7e0da;
+        margin: 0 0 1.5rem 0;
+        padding: 1rem 1.1rem;
         border-radius: 12px;
-        padding: 1rem 1.5rem;
+        border: 1px solid var(--neo-border);
+        background: var(--neo-panel);
+    }
+    .step { display: flex; flex-direction: column; align-items: center; flex: 1; }
+    .step-circle {
+        width: 36px; height: 36px; border-radius: 999px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 0.82rem; font-weight: 500;
+        border: 1px solid var(--neo-border-strong);
+    }
+    .step-circle.done {
+        background: var(--neo-accent);
+        color: #fff;
+        border-color: var(--neo-accent);
+    }
+    .step-circle.active {
+        background: var(--neo-accent);
+        color: #fff;
+        border-color: var(--neo-accent);
+    }
+    .step-circle.pending {
+        background: #FFFFFF;
+        color: var(--neo-soft);
+        border: 1px solid var(--neo-border-strong);
+    }
+    .step-label {
+        font-size: 12px;
+        margin-top: 0.45rem;
+        text-align: center;
+        font-weight: 400;
+    }
+    .step-label.done    { color: var(--neo-accent); }
+    .step-label.active  { color: var(--neo-accent); font-weight: 500; }
+    .step-label.pending { color: var(--neo-muted); }
+    .step-connector {
+        flex: 1;
+        height: 1px;
+        margin: 0 0.75rem;
+        background: var(--neo-border);
+    }
+    .step-connector.done {
+        background: var(--neo-border);
+    }
+
+    /* ── stat cards ── */
+    .stat-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 0.75rem;
+        margin: 1rem 0 1.25rem 0;
+    }
+    .stat-card {
+        background: #FFFFFF;
+        border: 1px solid var(--neo-border);
+        border-radius: 12px;
+        padding: 1rem;
+    }
+    .stat-value { font-size: 1.3rem; font-weight: 500; color: var(--neo-text); }
+    .stat-label {
+        font-size: 0.74rem;
+        color: var(--neo-muted);
+        margin-top: 0.35rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }
+
+    /* ── panels ── */
+    .neo-section-title {
+        margin: 0 0 0.5rem 0;
+        color: var(--neo-muted);
+        font-size: 13px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }
+    .neo-section-copy {
+        margin: 0 0 0.6rem 0;
+        color: var(--neo-muted);
+        font-size: 0.86rem;
+        line-height: 1.45;
+    }
+    .neo-card {
+        border-radius: 12px;
+        border: 1px solid var(--neo-border);
+        background: var(--neo-panel);
+        padding: 1.15rem 1.2rem;
         margin-bottom: 1rem;
     }
-    .hero-item { display: flex; align-items: center; gap: 0.5rem; flex: 1; }
-    .hero-num {
-        width: 26px; height: 26px; border-radius: 50%;
-        background: #92400e; color: #fff;
-        font-size: 0.75rem; font-weight: 700;
-        display: flex; align-items: center; justify-content: center;
-        flex-shrink: 0;
+    .neo-card.soft {
+        background: var(--neo-panel);
     }
-    .hero-label { font-size: 0.82rem; color: #1c1917; font-weight: 500; }
-    .hero-sep { color: #d4a574; font-size: 1rem; font-weight: 300; }
+    .neo-callout {
+        border-radius: 12px;
+        border: 1px solid var(--neo-border);
+        padding: 1.2rem 1.25rem;
+        background: #FFFFFF;
+        color: var(--neo-text);
+    }
+    .neo-callout h3 {
+        margin: 0;
+        font-size: 1.05rem;
+        font-weight: 500;
+        color: var(--neo-text);
+    }
+    .neo-callout p {
+        margin: 0.55rem 0 0 0;
+        color: var(--neo-muted);
+        line-height: 1.6;
+        font-size: 0.92rem;
+    }
+    .neo-pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.55rem;
+        margin-top: 0.95rem;
+    }
+    .neo-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 6px 14px;
+        border-radius: 999px;
+        border: none;
+        background: var(--neo-accent-bg);
+        color: var(--neo-accent-text);
+        font-size: 0.8rem;
+        font-weight: 500;
+    }
 
-    /* ── best model callout ── */
-    .callout-box {
-        background: linear-gradient(135deg, #fdf6ee, #faf7f5);
-        border-left: 4px solid #92400e;
-        border-radius: 0 10px 10px 0;
-        padding: 1rem 1.4rem;
-        margin: 1rem 0;
+    /* ── pipeline loaders ── */
+    .neo-loader-card {
+        border-radius: 12px;
+        border: 1px solid var(--neo-border);
+        background: #FFFFFF;
+        padding: 1.25rem 1.3rem;
+        margin-bottom: 1rem;
     }
-    .callout-title { font-size: 1rem; font-weight: 700; color: #92400e; margin-bottom: 0.35rem; }
-    .callout-box p { margin: 0.2rem 0; font-size: 0.88rem; color: #44403c; }
+    .neo-loader-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+    .neo-loader-stack {
+        display: flex;
+        align-items: center;
+        gap: 0.95rem;
+    }
+    .neo-loader-orb {
+        position: relative;
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, var(--neo-accent), var(--neo-accent-soft));
+        overflow: hidden;
+    }
+    .neo-loader-orb::before,
+    .neo-loader-orb::after {
+        content: "";
+        position: absolute;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.86);
+    }
+    .neo-loader-orb::before {
+        width: 18px;
+        height: 18px;
+        top: 10px;
+        left: 18px;
+        animation: loaderFloat 1.7s ease-in-out infinite;
+    }
+    .neo-loader-orb::after {
+        width: 8px;
+        height: 8px;
+        bottom: 11px;
+        right: 12px;
+        animation: loaderPulse 1.2s ease-in-out infinite;
+    }
+    .neo-loader-kicker {
+        color: var(--neo-soft);
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 0.3rem;
+    }
+    .neo-loader-title {
+        color: var(--neo-text);
+        font-size: 1rem;
+        font-weight: 500;
+        margin: 0;
+    }
+    .neo-loader-copy {
+        color: var(--neo-muted);
+        font-size: 0.88rem;
+        line-height: 1.6;
+        margin: 0.35rem 0 0 0;
+    }
+    .neo-loader-progress {
+        min-width: 110px;
+        text-align: right;
+        color: var(--neo-text);
+        font-size: 1.35rem;
+        font-weight: 500;
+        letter-spacing: -0.04em;
+    }
+    .neo-progress-track {
+        width: 100%;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.08);
+        overflow: hidden;
+        margin-top: 1rem;
+    }
+    .neo-progress-fill {
+        height: 100%;
+        border-radius: 999px;
+        background: var(--neo-accent);
+        transition: width 0.25s ease;
+    }
+    .neo-log-hint {
+        margin: 0.15rem 0 0 0;
+        color: var(--neo-soft);
+        font-size: 0.78rem;
+    }
+
+    /* ── native widgets ── */
+    .stButton > button,
+    .stDownloadButton > button,
+    div[data-testid="stFormSubmitButton"] > button {
+        min-height: 2.6rem;
+        border-radius: 8px;
+        border: 1px solid var(--neo-accent);
+        background: var(--neo-accent);
+        color: white;
+        font-weight: 500;
+        padding: 0.75rem 1.25rem;
+        box-shadow: none !important;
+        transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+    }
+    .stButton > button:hover,
+    .stDownloadButton > button:hover,
+    div[data-testid="stFormSubmitButton"] > button:hover {
+        background: #534AB7;
+        border-color: #534AB7;
+    }
+    div[data-testid="column"]:has(.neo-reset-anchor) .stButton > button {
+        background: transparent;
+        border-color: var(--neo-accent);
+        color: var(--neo-accent);
+    }
+    div[data-testid="column"]:has(.neo-reset-anchor) .stButton > button:hover {
+        background: var(--neo-accent-bg);
+        border-color: var(--neo-accent);
+        color: var(--neo-accent-text);
+    }
+    .stTextInput input,
+    .stTextArea textarea,
+    .stSelectbox [data-baseweb="select"] > div,
+    .stMultiSelect [data-baseweb="select"] > div,
+    .stNumberInput input {
+        border-radius: 10px !important;
+        border: 1px solid #E0DED8 !important;
+        background: #FFFFFF !important;
+        color: var(--neo-text) !important;
+        box-shadow: none !important;
+    }
+    .stSelectbox svg,
+    .stMultiSelect svg {
+        color: var(--neo-accent) !important;
+        fill: var(--neo-accent) !important;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 1.25rem;
+        background: transparent;
+        border-bottom: 1px solid var(--neo-border);
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: auto;
+        padding: 0 0 0.8rem 0;
+        margin-bottom: -1px;
+        border: none !important;
+        border-bottom: 2px solid transparent !important;
+        border-radius: 0;
+        background: transparent !important;
+        color: var(--neo-muted) !important;
+        font-weight: 500;
+    }
+    .stTabs [aria-selected="true"] {
+        color: var(--neo-accent) !important;
+        border-bottom-color: var(--neo-accent) !important;
+        background: transparent !important;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        color: var(--neo-text) !important;
+        border-bottom-color: #D9D6FF !important;
+    }
+    div[data-testid="stExpander"] {
+        border: 1px solid var(--neo-border) !important;
+        border-radius: 12px !important;
+        background: #FFFFFF !important;
+        overflow: hidden;
+        box-shadow: none !important;
+    }
+    div[data-testid="stDataFrame"] {
+        border: 1px solid var(--neo-border);
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: none !important;
+    }
+    div[data-testid="stMetric"] {
+        border: 1px solid var(--neo-border);
+        border-radius: 12px;
+        background: #FFFFFF;
+        padding: 0.7rem;
+        box-shadow: none !important;
+    }
+    div[data-testid="stStatusWidget"] {
+        border-radius: 12px;
+        border: 1px solid var(--neo-border);
+        background: #FFFFFF;
+        box-shadow: none !important;
+    }
+    @keyframes loaderFloat {
+        0%, 100% { transform: translateY(0px); opacity: 0.9; }
+        50% { transform: translateY(14px); opacity: 0.45; }
+    }
+    @keyframes loaderPulse {
+        0%, 100% { transform: scale(0.9); opacity: 0.55; }
+        50% { transform: scale(1.3); opacity: 1; }
+    }
+    .stButton > button:focus-visible,
+    .stDownloadButton > button:focus-visible,
+    div[data-testid="stFormSubmitButton"] > button:focus-visible,
+    .stTextInput input:focus,
+    .stTextArea textarea:focus,
+    .stSelectbox [data-baseweb="select"] > div:focus-within,
+    .stMultiSelect [data-baseweb="select"] > div:focus-within,
+    .stNumberInput input:focus {
+        outline: none !important;
+        border-color: var(--neo-accent) !important;
+        box-shadow: 0 0 0 2px rgba(92, 78, 229, 0.18) !important;
+    }
+    .stTabs [data-baseweb="tab"]:focus-visible {
+        outline: none !important;
+        border-bottom-color: var(--neo-accent) !important;
+        box-shadow: none !important;
+    }
+
+    @media (max-width: 900px) {
+        .neo-shell {
+            padding: 1.25rem;
+        }
+        .neo-loader-row { flex-direction: column; align-items: flex-start; }
+        .neo-loader-progress { text-align: left; }
+        .stepper { gap: 0.3rem; }
+        .block-container {
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -169,7 +511,7 @@ def render_messages() -> None:
 def stat_cards(stats: list[tuple[str, str]]) -> None:
     """Render a row of custom stat cards. stats = [(label, value), ...]"""
     cards_html = "".join(
-        f'<div class="stat-card"><div class="stat-value">{v}</div><div class="stat-label">{l}</div></div>'
+        f'<div class="stat-card"><div class="stat-value">{escape(v)}</div><div class="stat-label">{escape(l)}</div></div>'
         for l, v in stats
     )
     st.markdown(f'<div class="stat-row">{cards_html}</div>', unsafe_allow_html=True)
@@ -178,6 +520,13 @@ def stat_cards(stats: list[tuple[str, str]]) -> None:
 STAGE_ORDER = ["upload", "confirm", "running", "results"]
 STAGE_LABELS = {"upload": "Upload", "confirm": "Confirm", "running": "Training", "results": "Results"}
 STAGE_ICONS  = {"upload": "1", "confirm": "2", "running": "3", "results": "✓"}
+MODEL_LABELS = {
+    "LogisticRegression": "Logistic Regression",
+    "RandomForest": "Random Forest",
+    "XGBoost": "XGBoost",
+    "LightGBM": "LightGBM",
+    "Ridge": "Ridge",
+}
 
 
 def render_stepper(current: str) -> None:
@@ -206,53 +555,164 @@ def render_stepper(current: str) -> None:
 
     st.markdown(f'<div class="stepper">{"".join(parts)}</div>', unsafe_allow_html=True)
 
+def render_section_header(title: str, copy: str | None = None) -> None:
+    body = f'<div class="neo-section-title">{escape(title)}</div>'
+    if copy:
+        body += f'<p class="neo-section-copy">{escape(copy)}</p>'
+    st.markdown(body, unsafe_allow_html=True)
 
-# ── sidebar ───────────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown('<div class="main-header">Neo</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Your autonomous ML engineer</div>', unsafe_allow_html=True)
-    st.divider()
 
-    st.markdown('<div class="sidebar-section"><div class="sidebar-title">How it works</div></div>', unsafe_allow_html=True)
-    st.markdown(
-        """
-1. Upload a CSV  
-2. Describe what you want to predict  
-3. Confirm the target column  
-4. Agents train, tune, and explain the best model  
-        """,
-        unsafe_allow_html=False,
+def render_feature_band(items: list[tuple[str, str, str]]) -> None:
+    cards = "".join(
+        (
+            '<div class="neo-feature-card">'
+            f'<div class="neo-feature-kicker">{escape(kicker)}</div>'
+            f'<div class="neo-feature-title">{escape(title)}</div>'
+            f'<p class="neo-feature-copy">{escape(copy)}</p>'
+            '</div>'
+        )
+        for kicker, title, copy in items
     )
-    st.divider()
+    st.markdown(f'<div class="neo-feature-grid">{cards}</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="sidebar-title">Tech stack</div>', unsafe_allow_html=True)
-    tech = ["GPT-5.4", "LangGraph", "Optuna", "MLflow", "SHAP", "XGBoost", "LightGBM"]
-    st.markdown(
-        " ".join(f'<span class="tech-badge">{t}</span>' for t in tech),
+
+def render_metric_pills(items: list[tuple[str, str]]) -> None:
+    pills = "".join(
+        f'<div class="neo-pill"><span>{escape(label)}</span><span>{escape(value)}</span></div>'
+        for label, value in items
+    )
+    st.markdown(f'<div class="neo-pill-row">{pills}</div>', unsafe_allow_html=True)
+
+
+def render_loader_markup(title: str, detail: str, progress: int | None = None, kicker: str = "Working live") -> str:
+    progress_markup = (
+        f'<div class="neo-loader-progress">{progress}%</div>'
+        if progress is not None
+        else '<div class="neo-loader-progress">Live</div>'
+    )
+    track_markup = (
+        '<div class="neo-progress-track">'
+        f'<div class="neo-progress-fill" style="width:{progress}%"></div>'
+        '</div>'
+        if progress is not None
+        else ""
+    )
+    return (
+        '<div class="neo-loader-card">'
+        '<div class="neo-loader-row">'
+        '<div class="neo-loader-stack">'
+        '<div class="neo-loader-orb"></div>'
+        '<div>'
+        f'<div class="neo-loader-kicker">{escape(kicker)}</div>'
+        f'<div class="neo-loader-title">{escape(title)}</div>'
+        f'<p class="neo-loader-copy">{escape(detail)}</p>'
+        '</div>'
+        '</div>'
+        f'{progress_markup}'
+        '</div>'
+        f'{track_markup}'
+        '<p class="neo-log-hint">Updates stream live.</p>'
+        '</div>'
+    )
+
+
+@contextmanager
+def branded_loader(title: str, detail: str, kicker: str = "Loading") -> None:
+    placeholder = st.empty()
+    placeholder.markdown(
+        render_loader_markup(title, detail, None, kicker=kicker),
         unsafe_allow_html=True,
     )
-    st.divider()
+    with st.spinner(title):
+        yield
+    placeholder.empty()
 
-    if st.button("Reset session", width="stretch"):
-        for k in list(st.session_state.keys()):
-            del st.session_state[k]
-        st.rerun()
 
-    if st.session_state.stage == "results" and st.session_state.agent_state:
-        state = st.session_state.agent_state
-        st.divider()
-        st.markdown('<div class="sidebar-title">Best model</div>', unsafe_allow_html=True)
-        st.markdown(f"**{state.get('best_model_name', 'N/A')}**")
-        for k, v in (state.get("best_metrics") or {}).items():
-            st.markdown(f"`{k}`: **{v}**")
+def pipeline_model_order(problem_type: str | None) -> list[str]:
+    if problem_type == "classification":
+        return ["LogisticRegression", "RandomForest", "XGBoost", "LightGBM"]
+    return ["Ridge", "RandomForest", "XGBoost", "LightGBM"]
+
+
+def derive_pipeline_status(message: str, progress_state: dict) -> dict:
+    clean = re.sub(r"\s+", " ", re.sub(r"\*\*", "", message)).strip()
+    progress = progress_state.get("progress", 6)
+    title = progress_state.get("title", "Starting your pipeline")
+    detail = clean
+
+    message_lower = clean.lower()
+    if "profiling dataset" in message_lower or "target column confirmed" in message_lower or "target column identified" in message_lower:
+        title = "Profiling data"
+        progress = max(progress, 14)
+    elif "feature engineering" in message_lower or "new features created" in message_lower:
+        title = "Engineering features"
+        progress = max(progress, 32)
+    elif clean.startswith("Tuning") or clean.startswith("Optimizing"):
+        match = re.search(r"\*\*(.+?)\*\*", message)
+        model_key = match.group(1) if match else clean.split(":")[0].replace("Tuning ", "").replace("Optimizing ", "")
+        model_order = pipeline_model_order(st.session_state.get("confirmed_problem_type"))
+        if model_key in model_order:
+            idx = model_order.index(model_key)
+            title = f"Tuning {MODEL_LABELS.get(model_key, model_key)}"
+            progress = max(progress, 42 + idx * 11)
+        trial_match = re.search(r"trial\s+(\d+)/(\d+)", clean.lower())
+        if trial_match and model_key in model_order:
+            idx = model_order.index(model_key)
+            trial_num = int(trial_match.group(1))
+            trial_total = max(int(trial_match.group(2)), 1)
+            stage_base = 42 + idx * 11
+            stage_span = 10
+            progress = max(progress, min(86, stage_base + int((trial_num / trial_total) * stage_span)))
+            title = f"Tuning {MODEL_LABELS.get(model_key, model_key)}"
+    elif clean.startswith("Best model:"):
+        title = "Selecting best model"
+        progress = max(progress, 90)
+    elif "reporter agent" in message_lower:
+        title = "Building report"
+        progress = max(progress, 94)
+    elif "generating shap" in message_lower:
+        title = "Rendering SHAP"
+        progress = max(progress, 96)
+    elif "generating confidence" in message_lower or "actual vs predicted" in message_lower:
+        title = "Preparing charts"
+        progress = max(progress, 97)
+    elif "generating confusion matrix" in message_lower or "generating roc" in message_lower or "generating residual" in message_lower:
+        title = "Finalizing diagnostics"
+        progress = max(progress, 98)
+    elif "writing report" in message_lower:
+        title = "Writing report"
+        progress = max(progress, 99)
+
+    return {"title": title, "detail": clean, "progress": min(progress, 99)}
+
+
+def render_page_header() -> None:
+    st.markdown(
+        """
+        <div class="neo-shell">
+            <div class="neo-header-grid">
+                <div class="neo-brand-name">Neo - Auto ML</div>
+                <h1 class="neo-title">Upload data. Let Neo handle the rest.</h1>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_footer_actions() -> None:
+    _, footer_col = st.columns([9, 1.4])
+    with footer_col:
+        st.markdown('<div class="neo-reset-anchor"></div>', unsafe_allow_html=True)
+        if st.button("Reset session", width="stretch"):
+            for k in list(st.session_state.keys()):
+                del st.session_state[k]
+            st.rerun()
 
 
 # ── main header ───────────────────────────────────────────────────────────────
-st.markdown('<div class="main-header">Neo: AutoML Agent</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Upload data · describe your goal · get a tuned model</div>', unsafe_allow_html=True)
-
+render_page_header()
 render_stepper(st.session_state.stage)
-st.divider()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -263,19 +723,7 @@ if st.session_state.stage == "upload":
         SAMPLE_DATASETS, load_sample, load_from_url, load_from_text, load_from_database,
     )
 
-    st.markdown(
-        '<div class="hero-row">'
-        '<div class="hero-item"><div class="hero-num">1</div><div class="hero-label">Upload a dataset</div></div>'
-        '<div class="hero-sep">→</div>'
-        '<div class="hero-item"><div class="hero-num">2</div><div class="hero-label">Describe your goal</div></div>'
-        '<div class="hero-sep">→</div>'
-        '<div class="hero-item"><div class="hero-num">3</div><div class="hero-label">Neo trains &amp; tunes 4 models</div></div>'
-        '<div class="hero-sep">→</div>'
-        '<div class="hero-item"><div class="hero-num">4</div><div class="hero-label">Get results, SHAP &amp; a download</div></div>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown("")
+    render_section_header("Choose a dataset")
 
     tab_sample, tab_upload, tab_url, tab_paste, tab_db = st.tabs(
         ["Sample datasets", "Upload CSV", "From URL", "Paste CSV", "Database"]
@@ -287,7 +735,7 @@ if st.session_state.stage == "upload":
 
     # ── tab: sample datasets ─────────────────────────────────────────────────
     with tab_sample:
-        st.markdown("Pick a built-in dataset to try the agent instantly. No file needed.")
+        st.caption("Try a built-in dataset.")
         choice = st.selectbox(
             "Dataset",
             options=list(SAMPLE_DATASETS.keys()),
@@ -295,7 +743,10 @@ if st.session_state.stage == "upload":
         )
         st.caption(SAMPLE_DATASETS[choice]["description"])
         if st.button("Load dataset", key="load_sample"):
-            with st.spinner("Loading…"):
+            with branded_loader(
+                "Loading sample dataset",
+                    "Preparing sample data.",
+            ):
                 try:
                     df = load_sample(choice)
                     source_name = choice.split(":")[0].strip()
@@ -315,10 +766,13 @@ if st.session_state.stage == "upload":
 
     # ── tab: url ─────────────────────────────────────────────────────────────
     with tab_url:
-        st.markdown("Paste a link to any public CSV. GitHub, Google Sheets, and raw URLs all work.")
+        st.caption("Paste a public CSV URL.")
         url_input = st.text_input("URL", placeholder="https://raw.githubusercontent.com/…/data.csv")
         if st.button("Fetch", key="fetch_url") and url_input.strip():
-            with st.spinner("Fetching…"):
+            with branded_loader(
+                "Fetching remote CSV",
+                    "Fetching data.",
+            ):
                 try:
                     df = load_from_url(url_input.strip())
                     source_name = url_input.strip().split("/")[-1] or "url_data"
@@ -329,20 +783,24 @@ if st.session_state.stage == "upload":
 
     # ── tab: paste ───────────────────────────────────────────────────────────
     with tab_paste:
-        st.markdown("Paste CSV text directly. First row must be the header.")
+        st.caption("Paste raw CSV text.")
         pasted = st.text_area("CSV content", height=200, placeholder="col1,col2,col3\n1,a,0.5\n2,b,0.8")
         if st.button("Parse", key="parse_paste") and pasted.strip():
-            try:
-                df = load_from_text(pasted)
-                source_name = "pasted_data"
-                st.session_state.staged_df = df
-                st.session_state.staged_source = source_name
-            except Exception as e:
-                st.error(f"Could not parse CSV: {e}")
+            with branded_loader(
+                "Parsing pasted rows",
+                "Parsing data.",
+            ):
+                try:
+                    df = load_from_text(pasted)
+                    source_name = "pasted_data"
+                    st.session_state.staged_df = df
+                    st.session_state.staged_source = source_name
+                except Exception as e:
+                    st.error(f"Could not parse CSV: {e}")
 
     # ── tab: database ────────────────────────────────────────────────────────
     with tab_db:
-        st.markdown("Connect to a database and run a query.")
+        st.caption("Run a database query.")
         conn_col, _ = st.columns([2, 1])
         with conn_col:
             conn_str = st.text_input(
@@ -355,7 +813,10 @@ if st.session_state.stage == "upload":
             height=80,
         )
         if st.button("Run query", key="run_query") and conn_str.strip():
-            with st.spinner("Querying…"):
+            with branded_loader(
+                "Running database query",
+                "Running query.",
+            ):
                 try:
                     df = load_from_database(conn_str.strip(), query.strip())
                     source_name = "database_query"
@@ -366,7 +827,7 @@ if st.session_state.stage == "upload":
 
     # ── preview + goal (shared across all tabs) ───────────────────────────────
     if df is not None:
-        st.divider()
+        render_section_header("Dataset ready")
         st.success(f"**{source_name}** loaded: {df.shape[0]:,} rows x {df.shape[1]} columns")
 
         stat_cards([
@@ -376,42 +837,48 @@ if st.session_state.stage == "upload":
             ("Memory", f"{df.memory_usage(deep=True).sum() / 1024:.0f} KB"),
         ])
 
-        with st.expander("Preview (first 5 rows)", expanded=True):
-            st.dataframe(df.head(), width="stretch")
-
-        goal = st.text_area(
-            "What do you want to predict?",
-            placeholder='e.g. "Predict which customers will churn" or "Forecast house prices"',
-            height=100,
-            key="staged_goal",
-        )
-
-        if st.button("Analyze Data", type="primary", disabled=not goal.strip()):
-            with st.spinner("Analyzing your data…"):
-                try:
-                    from agents.data_agent import profile_dataframe, identify_target
-                    profile = profile_dataframe(df)
-                    identification = identify_target(profile, goal.strip())
-                except Exception as e:
-                    st.error(f"Analysis failed: {e}")
-                    st.stop()
-
-            # only record the message after a successful API call
-            add_message(
-                "user",
-                f"**Goal:** {goal.strip()}\n\n**Source:** {source_name} "
-                f"({df.shape[0]:,} rows × {df.shape[1]} cols)",
+        preview_col, goal_col = st.columns([1.15, 0.85], vertical_alignment="top")
+        with preview_col:
+            with st.expander("Preview", expanded=True):
+                st.dataframe(df.head(), width="stretch")
+        with goal_col:
+            render_section_header("Goal")
+            goal = st.text_area(
+                "What do you want to predict?",
+                placeholder='e.g. "Predict which customers will churn" or "Forecast house prices"',
+                height=140,
+                key="staged_goal",
             )
-            st.session_state.df = df
-            st.session_state.filename = source_name
-            st.session_state.user_goal = goal.strip()
-            st.session_state.suggested_target = identification["target_col"]
-            st.session_state.suggested_problem_type = identification["problem_type"]
-            st.session_state.suggested_reasoning = identification["reasoning"]
-            st.session_state.stage = "confirm"
-            st.session_state.pop("staged_df", None)
-            st.session_state.pop("staged_source", None)
-            st.rerun()
+            if st.button("Analyze Data", type="primary", disabled=not goal.strip()):
+                with branded_loader(
+                    "Analyzing your dataset",
+                    "Inferring the target.",
+                    kicker="Analyzing",
+                ):
+                    try:
+                        from agents.data_agent import profile_dataframe, identify_target
+                        profile = profile_dataframe(df)
+                        identification = identify_target(profile, goal.strip())
+                    except Exception as e:
+                        st.error(f"Analysis failed: {e}")
+                        st.stop()
+
+                # only record the message after a successful API call
+                add_message(
+                    "user",
+                    f"**Goal:** {goal.strip()}\n\n**Source:** {source_name} "
+                    f"({df.shape[0]:,} rows × {df.shape[1]} cols)",
+                )
+                st.session_state.df = df
+                st.session_state.filename = source_name
+                st.session_state.user_goal = goal.strip()
+                st.session_state.suggested_target = identification["target_col"]
+                st.session_state.suggested_problem_type = identification["problem_type"]
+                st.session_state.suggested_reasoning = identification["reasoning"]
+                st.session_state.stage = "confirm"
+                st.session_state.pop("staged_df", None)
+                st.session_state.pop("staged_source", None)
+                st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -422,86 +889,94 @@ elif st.session_state.stage == "confirm":
 
     df = st.session_state.df
 
-    with st.chat_message("assistant"):
-        st.markdown(
-            f"I analyzed your dataset. Here's what I found. **Please confirm or adjust** "
-            f"before I start training:\n\n"
-            f"> _{st.session_state.suggested_reasoning}_"
-        )
+    render_section_header("Confirm setup")
 
-    st.markdown('<div class="confirm-box">', unsafe_allow_html=True)
-    col_target, col_type = st.columns(2)
-    with col_target:
-        st.markdown("**Target column**")
+    st.markdown(
+        f"""
+        <div class="neo-callout">
+            <h3>{escape(str(st.session_state.suggested_target or "Suggested target"))}</h3>
+            <p>{escape(st.session_state.suggested_reasoning or "")}</p>
+            <div class="neo-pill-row">
+                <div class="neo-pill"><span>Problem type</span><span>{escape(str(st.session_state.suggested_problem_type or "pending"))}</span></div>
+                <div class="neo-pill"><span>Rows</span><span>{df.shape[0]:,}</span></div>
+                <div class="neo-pill"><span>Columns</span><span>{df.shape[1]}</span></div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    control_col, insight_col = st.columns([0.95, 1.05], vertical_alignment="top")
+    with control_col:
+        render_section_header("Target")
         confirmed_target = st.selectbox(
             "Target column",
             options=df.columns.tolist(),
             index=df.columns.tolist().index(st.session_state.suggested_target)
             if st.session_state.suggested_target in df.columns else 0,
-            label_visibility="collapsed",
         )
-    with col_type:
-        st.markdown("**Problem type**")
         confirmed_type = st.radio(
             "Problem type",
             options=["classification", "regression"],
             index=0 if st.session_state.suggested_problem_type == "classification" else 1,
             horizontal=True,
-            label_visibility="collapsed",
         )
-    st.markdown("</div>", unsafe_allow_html=True)
 
-    if confirmed_target:
-        stat_cards([
-            ("Unique values", str(df[confirmed_target].nunique())),
-            ("Null %", f"{df[confirmed_target].isnull().mean() * 100:.1f}%"),
-            ("Dtype", str(df[confirmed_target].dtype)),
-        ])
+        from utils.data_quality import run_checks
+        issues = run_checks(df, confirmed_target, confirmed_type)
+        if issues:
+            render_section_header("Checks")
+            for issue in issues:
+                if issue["level"] == "error":
+                    st.error(issue["message"])
+                else:
+                    st.warning(issue["message"])
 
-        if confirmed_type == "classification":
-            counts = df[confirmed_target].value_counts()
-            fig_dist, ax_dist = plt.subplots(figsize=(6, 2.5))
-            ax_dist.barh(
-                [str(v) for v in counts.index],
-                counts.values,
-                color=PLOT_BROWN,
+        if st.button("Start Training", type="primary"):
+            st.session_state.confirmed_target = confirmed_target
+            st.session_state.confirmed_problem_type = confirmed_type
+            add_message(
+                "assistant",
+                f"Confirmed: predicting `{confirmed_target}` ({confirmed_type}). Starting pipeline.",
             )
-            ax_dist.set_xlabel("Count")
-            ax_dist.set_title("Class distribution")
-            ax_dist.spines["top"].set_visible(False)
-            ax_dist.spines["right"].set_visible(False)
-            plt.tight_layout()
-            st.pyplot(fig_dist, width="stretch")
-            plt.close(fig_dist)
+            st.session_state.stage = "running"
+            st.rerun()
 
-            # imbalance warning: majority class > 80 %
-            majority_pct = counts.iloc[0] / counts.sum()
-            if majority_pct > 0.80:
-                st.warning(
-                    f"Class imbalance detected: the majority class represents "
-                    f"{majority_pct:.0%} of the data. Consider using AUC / F1 as "
-                    f"your primary metric rather than accuracy."
+    with insight_col:
+        if confirmed_target:
+            render_section_header("Snapshot")
+            stat_cards([
+                ("Unique values", str(df[confirmed_target].nunique())),
+                ("Null %", f"{df[confirmed_target].isnull().mean() * 100:.1f}%"),
+                ("Dtype", str(df[confirmed_target].dtype)),
+            ])
+
+            if confirmed_type == "classification":
+                counts = df[confirmed_target].value_counts()
+                fig_dist, ax_dist = plt.subplots(figsize=(6, 2.8))
+                ax_dist.barh(
+                    [str(v) for v in counts.index],
+                    counts.values,
+                    color=PLOT_ACCENT,
                 )
+                ax_dist.set_xlabel("Count")
+                ax_dist.set_title("Class distribution")
+                ax_dist.spines["top"].set_visible(False)
+                ax_dist.spines["right"].set_visible(False)
+                plt.tight_layout()
+                st.pyplot(fig_dist, width="stretch")
+                plt.close(fig_dist)
 
-    from utils.data_quality import run_checks
-    issues = run_checks(df, confirmed_target, confirmed_type)
-    if issues:
-        st.markdown("**Data quality checks**")
-        for issue in issues:
-            if issue["level"] == "error":
-                st.error(issue["message"])
-            else:
-                st.warning(issue["message"])
+                majority_pct = counts.iloc[0] / counts.sum()
+                if majority_pct > 0.80:
+                    st.warning(
+                        f"Class imbalance detected: the majority class represents "
+                        f"{majority_pct:.0%} of the data. Consider using AUC / F1 as "
+                        f"your primary metric rather than accuracy."
+                    )
 
-    if st.button("Start Training", type="primary"):
-        st.session_state.confirmed_target = confirmed_target
-        st.session_state.confirmed_problem_type = confirmed_type
-        add_message(
-            "assistant",
-            f"Confirmed: predicting `{confirmed_target}` ({confirmed_type}). Starting pipeline.",
-        )
-        st.session_state.stage = "running"
-        st.rerun()
+    if not df.columns.tolist():
+        st.warning("No columns available to confirm.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -510,12 +985,40 @@ elif st.session_state.stage == "confirm":
 elif st.session_state.stage == "running":
     render_messages()
 
+    render_section_header("Training")
+
+    pipeline_state = {
+        "title": "Preparing your run",
+        "detail": "Setting up the pipeline.",
+        "progress": 8,
+    }
+    pipeline_panel = st.empty()
+    pipeline_panel.markdown(
+        render_loader_markup(
+            pipeline_state["title"],
+            pipeline_state["detail"],
+            pipeline_state["progress"],
+            kicker="Training live",
+        ),
+        unsafe_allow_html=True,
+    )
+
     from graph.pipeline import run_pipeline
 
-    with st.status("Running pipeline…", expanded=True) as pipeline_status:
+    with st.status("Live agent log", expanded=True) as pipeline_status:
         def stream_status(msg: str) -> None:
             add_message("assistant", msg)
             pipeline_status.write(msg)
+            pipeline_state.update(derive_pipeline_status(msg, pipeline_state))
+            pipeline_panel.markdown(
+                render_loader_markup(
+                    pipeline_state["title"],
+                    pipeline_state["detail"],
+                    pipeline_state["progress"],
+                    kicker="Training live",
+                ),
+                unsafe_allow_html=True,
+            )
 
         result = run_pipeline(
             df=st.session_state.df,
@@ -526,6 +1029,15 @@ elif st.session_state.stage == "running":
         )
         pipeline_status.update(label="Pipeline complete.", state="complete", expanded=False)
 
+    pipeline_panel.markdown(
+        render_loader_markup(
+            "Pipeline complete",
+            "Model and artifacts are ready.",
+            100,
+            kicker="Complete",
+        ),
+        unsafe_allow_html=True,
+    )
     st.session_state.agent_state = result
     st.session_state.stage = "results"
     st.rerun()
@@ -542,37 +1054,43 @@ elif st.session_state.stage == "results":
         st.error("Something went wrong. No results returned.")
         st.stop()
 
-    # ── engineered features ──────────────────────────────────────────────────
+    best_name = state.get("best_model_name", "")
+    best_metrics = state.get("best_metrics", {})
+    top_features = state.get("top_features", [])
+
+    render_section_header("Results")
+
+    metric_pills = [(k.upper(), str(v)) for k, v in best_metrics.items()]
+    feature_pills = [("Top driver", feature) for feature in top_features[:3]]
+    pills_html = "".join(
+        f'<div class="neo-pill"><span>{escape(label)}</span><span>{escape(value)}</span></div>'
+        for label, value in [("Best model", best_name or "N/A"), *metric_pills, *feature_pills]
+    )
+    st.markdown(
+        (
+            '<div class="neo-callout">'
+            f'<h3>{escape(best_name or "Model ready")}</h3>'
+            '<p>Neo selected this candidate after benchmarking the baseline and tuned models, then generated diagnostics and exportable artifacts around the winner.</p>'
+            f'<div class="neo-pill-row">{pills_html}</div>'
+            '</div>'
+        ),
+        unsafe_allow_html=True,
+    )
+
     engineered = state.get("engineered_features", [])
     if engineered:
-        with st.expander(f"{len(engineered)} new features engineered", expanded=False):
+        render_section_header("Features")
+        with st.expander(f"{len(engineered)} engineered features", expanded=False):
             for f in engineered:
                 st.markdown(f"**`{f['name']}`**: {f['rationale']}")
                 st.code(f["expression"], language="python")
 
-    # ── report ───────────────────────────────────────────────────────────────
     if state.get("report_md"):
-        with st.chat_message("assistant"):
-            st.markdown(state["report_md"])
+        render_section_header("Summary")
+        st.markdown(state["report_md"])
 
-    # ── why this model callout ────────────────────────────────────────────────
-    best_name = state.get("best_model_name", "")
-    best_metrics = state.get("best_metrics", {})
-    top_features = state.get("top_features", [])
-    if best_name and best_metrics:
-        metric_highlights = " · ".join(f"**{k}**: {v}" for k, v in best_metrics.items())
-        feature_highlights = ", ".join(f"`{f}`" for f in top_features[:3]) if top_features else "N/A"
-        st.markdown(
-            f'<div class="callout-box">'
-            f'<div class="callout-title">Best model: {best_name}</div>'
-            f'<p>{metric_highlights}</p>'
-            f'<p>Top drivers: {feature_highlights}</p>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-    # ── model comparison ─────────────────────────────────────────────────────
     if state.get("results_df") is not None:
+        render_section_header("Leaderboard")
         results_df = state["results_df"]
         metric_cols = [c for c in results_df.columns if c != "Model"]
         low_is_better = {"rmse", "mae"}
@@ -592,10 +1110,9 @@ elif st.session_state.stage == "results":
         with st.expander("Model comparison", expanded=True):
             st.dataframe(_style_leaderboard(results_df), width="stretch")
 
-    # ── plots ─────────────────────────────────────────────────────────────────
+    render_section_header("Diagnostics")
     is_clf = st.session_state.confirmed_problem_type == "classification"
 
-    # row 1: SHAP + confidence / actual-vs-predicted
     plot_col1, plot_col2 = st.columns(2)
     with plot_col1:
         if state.get("shap_fig") is not None:
@@ -607,7 +1124,6 @@ elif st.session_state.stage == "results":
             with st.expander(label, expanded=True):
                 st.pyplot(state["confidence_fig"])
 
-    # row 2: confusion matrix + ROC (classification) OR residuals (regression)
     if is_clf:
         diag_col1, diag_col2 = st.columns(2)
         with diag_col1:
@@ -623,14 +1139,13 @@ elif st.session_state.stage == "results":
             with st.expander("Residual analysis", expanded=True):
                 st.pyplot(state["residual_fig"])
 
-    # ── prediction sandbox ────────────────────────────────────────────────────
     df_eng = state.get("df_engineered") if state.get("df_engineered") is not None else st.session_state.df
     target_col = st.session_state.confirmed_target
     problem_type = st.session_state.confirmed_problem_type
 
     if df_eng is not None and state.get("best_model") is not None:
-        st.markdown("---")
-        with st.expander("Prediction sandbox: try your own inputs", expanded=False):
+        render_section_header("Prediction sandbox")
+        with st.expander("Open prediction sandbox", expanded=False):
             st.caption("Enter values for each feature and get a live prediction from the best model.")
             feature_cols = [c for c in df_eng.columns if c != target_col]
 
@@ -674,8 +1189,7 @@ elif st.session_state.stage == "results":
                 except Exception as e:
                     st.error(f"Prediction failed: {e}")
 
-    # ── downloads ────────────────────────────────────────────────────────────
-    st.markdown("---")
+    render_section_header("Exports")
     dl1, dl2, dl3, dl4 = st.columns(4)
 
     with dl1:
@@ -695,26 +1209,21 @@ elif st.session_state.stage == "results":
                 lines = md.splitlines()
                 html_lines = []
                 for line in lines:
-                    # headings
                     m = _re.match(r"^(#{1,4})\s+(.*)", line)
                     if m:
-                        level = min(len(m.group(1)) + 1, 4)  # h2–h4
+                        level = min(len(m.group(1)) + 1, 4)
                         html_lines.append(f"<h{level}>{m.group(2)}</h{level}>")
                         continue
-                    # horizontal rule
                     if _re.match(r"^---+$", line.strip()):
                         html_lines.append("<hr>")
                         continue
-                    # blank line → paragraph break
                     if not line.strip():
                         html_lines.append("<p></p>")
                         continue
-                    # inline: escape HTML, then apply markdown
                     text = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                     text = _re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
-                    text = _re.sub(r"\*(.+?)\*",     r"<em>\1</em>",         text)
-                    text = _re.sub(r"`(.+?)`",        r"<code>\1</code>",     text)
-                    # list items
+                    text = _re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
+                    text = _re.sub(r"`(.+?)`", r"<code>\1</code>", text)
                     if _re.match(r"^[-*]\s+", text):
                         text = "<li>" + _re.sub(r"^[-*]\s+", "", text) + "</li>"
                     else:
@@ -726,15 +1235,15 @@ elif st.session_state.stage == "results":
                 "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
                 "<title>Neo: Model Report</title><style>"
                 "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
-                "max-width:820px;margin:48px auto;color:#1c1917;line-height:1.7}"
-                "h1,h2,h3,h4{color:#92400e;margin-top:1.8rem}"
+                "max-width:820px;margin:48px auto;color:#111827;line-height:1.7;background:#fff}"
+                "h1,h2,h3,h4{color:#111827;margin-top:1.8rem}"
                 "strong{font-weight:600}"
-                "code{background:#faf7f5;padding:2px 6px;border-radius:4px;font-size:.9em}"
-                "hr{border:none;border-top:1px solid #e7e0da;margin:32px 0}"
+                "code{background:#f3f4f6;padding:2px 6px;border-radius:4px;font-size:.9em}"
+                "hr{border:none;border-top:1px solid #e5e7eb;margin:32px 0}"
                 "li{margin:4px 0}"
                 "table{border-collapse:collapse;width:100%}"
-                "th,td{border:1px solid #e7e0da;padding:8px 12px;text-align:left}"
-                "th{background:#faf7f5;font-weight:600}"
+                "th,td{border:1px solid #e5e7eb;padding:8px 12px;text-align:left}"
+                "th{background:#f9fafb;font-weight:600}"
                 f"</style></head><body>{_md_to_html(state['report_md'])}</body></html>"
             )
             st.download_button(
@@ -765,3 +1274,6 @@ elif st.session_state.stage == "results":
                 st.info("Opening [http://localhost:5001](http://localhost:5001) in a new tab.")
         except ImportError:
             pass
+
+
+render_footer_actions()
