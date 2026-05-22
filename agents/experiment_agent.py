@@ -47,7 +47,7 @@ def _make_objective(model_name: str, problem_type: str, X_train, y_train, X_test
                     max_depth=max_depth,
                     min_samples_split=min_samples_split,
                     random_state=42,
-                    n_jobs=-1,
+                    n_jobs=1,
                 )
             else:
                 model = RandomForestRegressor(
@@ -55,19 +55,19 @@ def _make_objective(model_name: str, problem_type: str, X_train, y_train, X_test
                     max_depth=max_depth,
                     min_samples_split=min_samples_split,
                     random_state=42,
-                    n_jobs=-1,
+                    n_jobs=1,
                 )
 
         elif model_name == "XGBoost":
             params = {
-                "n_estimators": trial.suggest_int("n_estimators", 50, 300),
-                "max_depth": trial.suggest_int("max_depth", 3, 10),
-                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+                "n_estimators": trial.suggest_int("n_estimators", 50, 150),
+                "max_depth": trial.suggest_int("max_depth", 3, 6),
+                "learning_rate": trial.suggest_float("learning_rate", 0.05, 0.3, log=True),
                 "subsample": trial.suggest_float("subsample", 0.6, 1.0),
                 "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
                 "random_state": 42,
                 "verbosity": 0,
-                "n_jobs": -1,
+                "nthread": 1,
             }
             if problem_type == "classification":
                 model = XGBClassifier(**params, eval_metric="logloss", use_label_encoder=False)
@@ -76,13 +76,13 @@ def _make_objective(model_name: str, problem_type: str, X_train, y_train, X_test
 
         elif model_name == "LightGBM":
             params = {
-                "n_estimators": trial.suggest_int("n_estimators", 50, 300),
-                "max_depth": trial.suggest_int("max_depth", 3, 10),
-                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-                "num_leaves": trial.suggest_int("num_leaves", 20, 150),
+                "n_estimators": trial.suggest_int("n_estimators", 50, 150),
+                "max_depth": trial.suggest_int("max_depth", 3, 6),
+                "learning_rate": trial.suggest_float("learning_rate", 0.05, 0.3, log=True),
+                "num_leaves": trial.suggest_int("num_leaves", 20, 80),
                 "subsample": trial.suggest_float("subsample", 0.6, 1.0),
                 "random_state": 42,
-                "n_jobs": -1,
+                "n_jobs": 1,
                 "verbose": -1,
             }
             if problem_type == "classification":
@@ -162,21 +162,21 @@ def tune_model(
     elif model_name == "RandomForest":
         kw = {k: best_params[k] for k in ["n_estimators", "max_depth", "min_samples_split"]}
         if problem_type == "classification":
-            best_model = RandomForestClassifier(**kw, random_state=42, n_jobs=-1)
+            best_model = RandomForestClassifier(**kw, random_state=42, n_jobs=1)
         else:
-            best_model = RandomForestRegressor(**kw, random_state=42, n_jobs=-1)
+            best_model = RandomForestRegressor(**kw, random_state=42, n_jobs=1)
     elif model_name == "XGBoost":
         kw = {k: best_params[k] for k in ["n_estimators", "max_depth", "learning_rate", "subsample", "colsample_bytree"]}
         if problem_type == "classification":
-            best_model = XGBClassifier(**kw, random_state=42, verbosity=0, n_jobs=-1, eval_metric="logloss", use_label_encoder=False)
+            best_model = XGBClassifier(**kw, random_state=42, verbosity=0, nthread=1, eval_metric="logloss", use_label_encoder=False)
         else:
-            best_model = XGBRegressor(**kw, random_state=42, verbosity=0, n_jobs=-1)
+            best_model = XGBRegressor(**kw, random_state=42, verbosity=0, nthread=1)
     elif model_name == "LightGBM":
         kw = {k: best_params[k] for k in ["n_estimators", "max_depth", "learning_rate", "num_leaves", "subsample"]}
         if problem_type == "classification":
-            best_model = LGBMClassifier(**kw, random_state=42, n_jobs=-1, verbose=-1)
+            best_model = LGBMClassifier(**kw, random_state=42, n_jobs=1, verbose=-1)
         else:
-            best_model = LGBMRegressor(**kw, random_state=42, n_jobs=-1, verbose=-1)
+            best_model = LGBMRegressor(**kw, random_state=42, n_jobs=1, verbose=-1)
 
     X_all = np.concatenate([X_train, X_test], axis=0)
     y_all = np.concatenate([y_train, y_test], axis=0)
@@ -207,10 +207,9 @@ def tune_model(
         primary_metric = -rmse
         cv_scoring = "r2"
 
-    # 5-fold cross-validation on the full dataset with best params
-    # n_jobs=1 avoids multiprocessing issues on Streamlit Cloud
+    # 3-fold cross-validation — fast and still reliable; n_jobs=1 avoids cloud multiprocessing issues
     try:
-        cv_raw = cross_val_score(best_model, X_all, y_all, cv=5, scoring=cv_scoring, n_jobs=1)
+        cv_raw = cross_val_score(best_model, X_all, y_all, cv=3, scoring=cv_scoring, n_jobs=1)
         cv_mean = round(float(cv_raw.mean()), 4)
         cv_std  = round(float(cv_raw.std()), 4)
     except Exception:
