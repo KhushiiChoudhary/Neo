@@ -136,7 +136,18 @@ def tune_model(
                 f"Tuning **{model_name}**: trial {trial.number + 1}/{n_trials} · best so far: {best}"
             )
 
-    study.optimize(objective, n_trials=n_trials, show_progress_bar=False, callbacks=[_trial_cb])
+    no_improve_patience = max(3, n_trials // 3)
+    _best_seen: list[float] = []
+
+    def _early_stop_cb(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
+        _trial_cb(study, trial)
+        _best_seen.append(study.best_value)
+        if len(_best_seen) >= no_improve_patience:
+            recent = _best_seen[-no_improve_patience:]
+            if recent[-1] == recent[0]:  # no improvement in last N trials
+                study.stop()
+
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=False, callbacks=[_early_stop_cb])
 
     if status_callback:
         status_callback(f"**{model_name}** tuning complete. Running cross-validation…")
